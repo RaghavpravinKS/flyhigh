@@ -73,10 +73,10 @@ struct PID {
 };
 
 struct Signal {
-  byte height;
-  byte frwrvr;
-  byte rgtlft;
-  byte yaw;
+  int height;
+  int  frwrvr;
+  int  rgtlft;
+  int yaw;
 };
 
 // Servo objects for four motors
@@ -135,16 +135,6 @@ struct caliberation{
 
 };
 
-
-// void update_rates(rate &rate, caliberation &caliberation){
-//       rate.roll-=caliberation.roll;
-//       rate.pitch-=caliberation.pitch;
-//       rate.yaw-=caliberation.yaw;
-// }
-
-
-
-
 // Variabkes to keep track of the PID errors
 float prev_error_roll = 0.0;
 float prev_error_pitch = 0.0;
@@ -172,17 +162,18 @@ PID pid_yaw;
 
 void setconst(){
 pid_roll.Kp=1;
-pid_roll.Ki=1;
-pid_roll.Kd=1;
+pid_roll.Ki=0;
+pid_roll.Kd=0;
 
 pid_pitch.Kp=1;
-pid_pitch.Ki=1;
-pid_pitch.Kd=1;
+pid_pitch.Ki=0;
+pid_pitch.Kd=0;
 
 pid_yaw.Kp=1;
-pid_yaw.Ki=1;
-pid_yaw.Kd=1;
+pid_yaw.Ki=0;
+pid_yaw.Kd=0;
 }
+
 // Carrying caliberation values
 
 caliberation CALIBER;
@@ -209,7 +200,7 @@ float calcPID(float ref, PID &pid, float actual, float &prev_error, float &integ
   float error = ref - actual;
 
   // Calculate the integral
-  integral = integral + error*dt;
+  integral = integral + ( error+prev_error)*dt/2;
 
   
   // Calculate the derivative
@@ -218,12 +209,24 @@ float calcPID(float ref, PID &pid, float actual, float &prev_error, float &integ
   // Calculate the PID output
   float output = pid.Kp * error + pid.Ki * integral + pid.Kd * derivative;
 
+//  if (output>90){
+//     output=90;
+//  }
+//  if (output<-90){
+//     output=-90; 
+//   }
+
   // Update the previous error
   prev_error = error;
-
   return output;
 
+  if (output<0){
+    output=0;
+  
+  }
+
 }
+
 
 // Function to control the motors
 void motorControl(REF_RPY &ref_rpy, PIDoutput &pidOutput) {
@@ -231,16 +234,52 @@ void motorControl(REF_RPY &ref_rpy, PIDoutput &pidOutput) {
 
   
 
-  int motorFrSpeed = ref_rpy.throttle + pidOutput.roll - pidOutput.pitch + pidOutput.yaw;
-  int motorFlSpeed = ref_rpy.throttle - pidOutput.roll - pidOutput.pitch - pidOutput.yaw;
-  int motorBrSpeed = ref_rpy.throttle - pidOutput.roll + pidOutput.pitch + pidOutput.yaw;
-  int motorBlSpeed = ref_rpy.throttle + pidOutput.roll + pidOutput.pitch - pidOutput.yaw;
+  int motorFrSpeed = ref_rpy.throttle + pidOutput.roll - pidOutput.pitch + pidOutput.yaw +40;
+  int motorFlSpeed = ref_rpy.throttle - pidOutput.roll - pidOutput.pitch - pidOutput.yaw +40;
+  int motorBrSpeed = ref_rpy.throttle - pidOutput.roll + pidOutput.pitch + pidOutput.yaw +40;
+  int motorBlSpeed = ref_rpy.throttle + pidOutput.roll + pidOutput.pitch - pidOutput.yaw +40;
 
-  // Map the motor speeds to 0-180
-  motorFrSpeed = map(motorFrSpeed, 0, 22200, 0, 180);
-  motorFlSpeed = map(motorFlSpeed, 0, 22200, 0, 180);
-  motorBrSpeed = map(motorBrSpeed, 0, 22200, 0, 180);
-  motorBlSpeed = map(motorBlSpeed, 0, 22200, 0, 180);
+  if (motorFrSpeed>160){
+    motorFrSpeed=160;
+  }
+
+  if (motorBrSpeed>160){
+    motorBrSpeed=160;
+  }
+  if (motorFlSpeed>160){
+    motorFlSpeed=160;
+  } 
+  if (motorBlSpeed>160){
+    motorBlSpeed=160;
+  }
+
+
+// There will be problem when we want to keep drone at rest position
+
+  // if (motorFrSpeed<40){
+  //   motorFrSpeed=40;
+  // }
+
+  // if (motorFlSpeed<40){
+  //   motorFlSpeed=40;
+  // }
+  // if (motorBrSpeed<40){
+  //   motorBrSpeed=40;
+  // }
+
+  // if (motorBlSpeed<40){
+  //   motorBlSpeed=40;
+  // }
+  
+  // Print the motor speeds
+  Serial.print("MotorFr=");
+  Serial.print(motorFrSpeed);
+  Serial.print("   MotorFl=");
+  Serial.print(motorFlSpeed);
+  Serial.print("   MotorBr=");
+  Serial.print(motorBrSpeed);
+  Serial.print("   MotorBl=");
+  Serial.println(motorBlSpeed);
 
   // Write the motor speeds
   motorFr.write(motorFrSpeed);
@@ -263,6 +302,7 @@ void gyroData(Gyro &gyro) {
   gyro.wz = Wire.read() << 8 | Wire.read(); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
   Wire.endTransmission(true); // End the transmission
 }
+
 
 
 void calib (rate &rate,caliberation &caliberation)
@@ -292,13 +332,23 @@ void calib (rate &rate,caliberation &caliberation)
 
 void calcReferenceInput(Signal &signal, REF_RPY &rpy) {
   rpy.throttle = signal.height;
-  rpy.roll = signal.frwrvr;
-  rpy.pitch = signal.rgtlft ;
+  rpy.roll = signal.rgtlft;
+  rpy.pitch = signal.frwrvr ;
   rpy.yaw = signal.yaw;
 
-  rpy.roll  =map(rpy.roll,0,3.3,-15,15);
-  rpy.pitch =map(rpy.roll,0,3.3,-15,15);
-  rpy.yaw   =map(rpy.roll,0,3.3,-15,15);
+
+  rpy.throttle = 15;
+  rpy.roll = 0;
+  rpy.pitch = 0 ;
+  rpy.yaw =0;
+  // rpy.roll  =map(rpy.roll,0,1600,0,15);  // 0-1600 to -15 to 15
+
+  // rpy.pitch =map(rpy.roll,0,1600,0,15);  // 0-1600 to -15 to 15
+
+  // Serial.print("   Roll=");
+
+  // Serial.print(rpy.roll);
+  // rpy.yaw   =map(rpy.roll,0,1600,0,15); // 0-1600 to -15 to 15
 
 }
 
@@ -317,11 +367,30 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
   pGyro.Ay = gyro.ay/16384.0; // Acceleration in Y-axis in m/s^2, 0.04 is the offset
   pGyro.Az = gyro.az/16384.0; // Acceleration in Z-axis in m/s^2, 0.04 is the offset
   pGyro.Temp = gyro.temp/340.0 + 36.53; // Temperature in degree Celsius
+
+  
+  
+  // low pass filter for rate.roll,pitch and yaw data to remove noise
+
+
   Rate.roll = gyro.wx/131.0-CALIBER.roll; // Angular velocity in X-axis in degrees per second
   Rate.pitch = gyro.wy/131.0-CALIBER.pitch; // Angular velocity in Y-axis in degrees per second
   Rate.yaw = gyro.wz/131.0-CALIBER.yaw; // Angular velocity in Z-axis in degrees per second
-  
-  Serial.print(" Rate roll: ");
+
+
+  if (abs(Rate.roll)<0.1){
+    Rate.roll=0;
+  }
+  if (abs(Rate.pitch)<0.1){
+    Rate.pitch=0;
+  }
+  if (abs(Rate.yaw)<0.1){
+    Rate.yaw=0;
+  }
+
+
+
+  Serial.print("Rate roll: ");
   Serial.print(Rate.roll);
   Serial.print(" Rate pitch: ");
   Serial.print(Rate.pitch);
@@ -335,8 +404,14 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
   // PID calculation
   
   pidOutput.roll = calcPID(ref_rpy.roll, pid_roll, Rate.roll, prev_error_roll, integral_roll, derivative_roll, dt);
+  // Serial.println("PID roll: ");
+  // Serial.print(pidOutput.roll);
   pidOutput.pitch = calcPID(ref_rpy.pitch, pid_pitch, Rate.pitch, prev_error_pitch, integral_pitch, derivative_pitch, dt);
+  // Serial.print(" PID pitch: ");
+  // Serial.print(pidOutput.pitch);
   pidOutput.yaw = calcPID(ref_rpy.yaw, pid_yaw, Rate.yaw, prev_error_yaw, integral_yaw, derivative_yaw, dt);
+  // Serial.print(" PID yaw: ");
+  // Serial.println(pidOutput.yaw);
 
   motorControl(ref_rpy, pidOutput);
   
@@ -346,10 +421,12 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
 
 
 void receiveData() {
+
   if (receiver.available()) {
-    Serial.println("DATA AVAILABLE");
+    // Serial.println("DATA AVAILABLE");
     receiver.read(&data, sizeof(data));
     previousRFTime = millis();
+
     Serial.print("height: ");
     Serial.print(data.height);
     Serial.print(" frwrvr: ");
@@ -357,12 +434,25 @@ void receiveData() {
     Serial.print(" rgtlft: ");
     Serial.print(data.rgtlft);
     Serial.print(" Yaw: ");
-    Serial.print(data.yaw);
-
-  
-
-    
+    Serial.println(data.yaw);
   }
+
+  else{
+    // Serial.println("NO DATA");
+
+      data.height = data.height;
+      data.frwrvr = data.frwrvr;
+      data.rgtlft = data.rgtlft;
+      data.yaw = data.yaw;
+
+  }
+
+}
+// Function to reset previous error values to 0
+void makeZero(PIDoutput &pidOutput) {
+  prev_error_roll = 0.0;
+  prev_error_pitch = 0.0;
+  prev_error_yaw = 0.0;
 }
 
 
@@ -413,7 +503,7 @@ void setup() {
 
   calib(Rate, CALIBER);
 
-motorFr.attach(MOTOR_FR);
+  motorFr.attach(MOTOR_FR);
   motorFl.attach(MOTOR_FL);
   motorBr.attach(MOTOR_BR);
   motorBl.attach(MOTOR_BL);
@@ -428,8 +518,10 @@ receiver.startListening();       //This sets the module as receiver
 Serial.println("WORKING PROPERLY");
 
 setconst();
+makeZero(pidOutput);
 
-}
+
+} 
 
 
 
@@ -441,6 +533,7 @@ receiveData();
 
 
 gyroData(gyro);
+
 // update_rates();
 calcInput(data, gyro, pidOutput);
 
