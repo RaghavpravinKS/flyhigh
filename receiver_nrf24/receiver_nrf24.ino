@@ -41,8 +41,6 @@ int redLed=24;    // Red LED
 int greenLed=22; // Green LED
 int blueLed=23;  // Blue LED
 
-
-
 #define TRUE 1
 #define FALSE 0
 
