@@ -28,6 +28,8 @@
 #include <nRF24L01.h>
 #include "MPU6050_res_define.h"
 #include <math.h>
+#include <pwm.h>
+
 
 SPIClass SPI(0);
 
@@ -35,24 +37,32 @@ SPIClass SPI(0);
 TwoWire Wire(1);
 const int mpu6050 = 0x68;    // Default address for MPU-6050
 
+int redLed=24;    // Red LED
+int greenLed=22; // Green LED
+int blueLed=23;  // Blue LED
+
+
+
 #define TRUE 1
 #define FALSE 0
 
+uint32_t LoopTimer;
+
 RF24 receiver(9, 10); // CE, CSN
-const byte address[6] = "101001";
+const byte address[6] = "101000";
 // boolean button_state = 0;
 // int led_pin = 23;
 
 Servo bldc;
 
 struct Gyro {
-  int16_t ax;
-  int16_t ay;
-  int16_t az;
-  int16_t temp;
-  int16_t wx;
-  int16_t wy;
-  int16_t wz;
+  float ax;
+  float ay;
+  float az;
+  float temp;
+  float wx;
+  float wy;
+  float wz;
 };
 
 struct procGyro{
@@ -86,18 +96,11 @@ Servo motorBr; // Back Right Motor
 Servo motorBl; // Back Left Motor
 
 // Pins for the motors (ESCs)
-#define MOTOR_FR 0
-#define MOTOR_FL 1
-#define MOTOR_BR 2
-#define MOTOR_BL 3
+#define MOTOR_FR 3
+#define MOTOR_FL 2
+#define MOTOR_BR 4
+#define MOTOR_BL 1
 
-
-float integral_roll = 0.0;
-float integral_pitch = 0.0;
-float integral_yaw = 0.0;
-float derivative_roll = 0.0;
-float derivative_pitch = 0.0;
-float derivative_yaw = 0.0;
 
 
 // Struct to carry the Roll, Pitch and Yaw data
@@ -136,9 +139,7 @@ struct caliberation{
 };
 
 // Variabkes to keep track of the PID errors
-float prev_error_roll = 0.0;
-float prev_error_pitch = 0.0;
-float prev_error_yaw = 0.0;
+
 
 // Signal object to carry the data
 Signal data;
@@ -160,19 +161,33 @@ PID pid_roll;
 PID pid_pitch;
 PID pid_yaw;
 
+float integral_roll = 0.0;
+float integral_pitch = 0.0;
+float integral_yaw = 0.0;
+float derivative_roll = 0.0;
+float derivative_pitch = 0.0;
+float derivative_yaw = 0.0;
+
+float prev_error_roll = 0.0;
+float prev_error_pitch = 0.0;
+float prev_error_yaw = 0.0;
+
+
 void setconst(){
-pid_roll.Kp=1;
+pid_roll.Kp=500;
 pid_roll.Ki=0;
 pid_roll.Kd=0;
 
-pid_pitch.Kp=1;
+pid_pitch.Kp=500; 
 pid_pitch.Ki=0;
 pid_pitch.Kd=0;
 
-pid_yaw.Kp=1;
+pid_yaw.Kp=500;
 pid_yaw.Ki=0;
 pid_yaw.Kd=0;
+
 }
+
 
 // Carrying caliberation values
 
@@ -195,12 +210,11 @@ unsigned long previousPIDTime = 0;
 // Function to implement the PID
 float calcPID(float ref, PID &pid, float actual, float &prev_error, float &integral, float &derivative, float &dt) {
 
-
   // Calculate the error
   float error = ref - actual;
 
   // Calculate the integral
-  integral = integral + ( error+prev_error)*dt/2;
+  integral = integral + error*dt;
 
   
   // Calculate the derivative
@@ -227,181 +241,139 @@ float calcPID(float ref, PID &pid, float actual, float &prev_error, float &integ
 
 }
 
+signed short Ax,Ay,Az,Temp,Wx,Wy,Wz;
+float a = 0.00;
+float b = 0.00;
+float c = 0.00;
 
-// Function to control the motors
-void motorControl(REF_RPY &ref_rpy, PIDoutput &pidOutput) {
-  // Calculate the motor speeds
-
-  
-
-  int motorFrSpeed = ref_rpy.throttle + pidOutput.roll - pidOutput.pitch + pidOutput.yaw +40;
-  int motorFlSpeed = ref_rpy.throttle - pidOutput.roll - pidOutput.pitch - pidOutput.yaw +40;
-  int motorBrSpeed = ref_rpy.throttle - pidOutput.roll + pidOutput.pitch + pidOutput.yaw +40;
-  int motorBlSpeed = ref_rpy.throttle + pidOutput.roll + pidOutput.pitch - pidOutput.yaw +40;
-
-  if (motorFrSpeed>160){
-    motorFrSpeed=160;
-  }
-
-  if (motorBrSpeed>160){
-    motorBrSpeed=160;
-  }
-  if (motorFlSpeed>160){
-    motorFlSpeed=160;
-  } 
-  if (motorBlSpeed>160){
-    motorBlSpeed=160;
-  }
-
-
-// There will be problem when we want to keep drone at rest position
-
-  // if (motorFrSpeed<40){
-  //   motorFrSpeed=40;
-  // }
-
-  // if (motorFlSpeed<40){
-  //   motorFlSpeed=40;
-  // }
-  // if (motorBrSpeed<40){
-  //   motorBrSpeed=40;
-  // }
-
-  // if (motorBlSpeed<40){
-  //   motorBlSpeed=40;
-  // }
-  
-  // Print the motor speeds
-  Serial.print("MotorFr=");
-  Serial.print(motorFrSpeed);
-  Serial.print("   MotorFl=");
-  Serial.print(motorFlSpeed);
-  Serial.print("   MotorBr=");
-  Serial.print(motorBrSpeed);
-  Serial.print("   MotorBl=");
-  Serial.println(motorBlSpeed);
-
-  // Write the motor speeds
-  motorFr.write(motorFrSpeed);
-  motorFl.write(motorFlSpeed);
-  motorBr.write(motorBrSpeed);
-  motorBl.write(motorBlSpeed);
-}
+float gyroX,gyroY,gyroZ;
 
 void gyroData(Gyro &gyro) {
+
+// for (int z=0;z<20;z++)
+// {
+
   Wire.beginTransmission(mpu6050); // Start the transmission
   Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
   Wire.endTransmission(false); // End the transmission
   Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
-  gyro.ax = Wire.read() << 8 | Wire.read(); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
-  gyro.ay = Wire.read() << 8 | Wire.read(); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  gyro.az = Wire.read() << 8 | Wire.read(); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-  gyro.temp = Wire.read() << 8 | Wire.read(); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-  gyro.wx = Wire.read() << 8 | Wire.read(); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  gyro.wy = Wire.read() << 8 | Wire.read(); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  gyro.wz = Wire.read() << 8 | Wire.read(); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
   Wire.endTransmission(true); // End the transmission
+  // delayMicroseconds(50);
+  a = (float)Wx/131.0;
+  b = (float)Wy/131.0;
+  c = (float)Wz/131.0;
+// 
+// }
+  gyroX = a;
+  gyroY = b;
+  gyroZ = c;
+
 }
+
 
 
 
 void calib (rate &rate,caliberation &caliberation)
   {
 
-    for ( int iterations=0;iterations<3000;iterations++){
+    for ( int iterations=0;iterations<2000;iterations++){
       gyroData(gyro);
 
-  rate.roll = gyro.wx/131; // Angular velocity in X-axis in degrees per second
-  rate.pitch = gyro.wy/131; // Angular velocity in Y-axis in degrees per second
-  rate.yaw = gyro.wz/131; // Angular velocity in Z-axis in degrees per second
+  // rate.roll = gyro.wx; // Angular velocity in X-axis in degrees per second
+  // rate.pitch = gyro.wy; // Angular velocity in Y-axis in degrees per second
+  // rate.yaw = gyro.wz; // Angular velocity in Z-axis in degrees per second
 
   
-      caliberation.roll+=rate.roll;
-      caliberation.pitch+=rate.pitch;
-      caliberation.yaw+=rate.yaw;
-      delay(1);
+      caliberation.roll += gyroX;
+      caliberation.pitch += gyroY;
+      caliberation.yaw += gyroZ;
+      delay(10);
 
     }
 
-      caliberation.roll/=3000;
-      caliberation.pitch/=3000;
-      caliberation.yaw/=3000;
+      caliberation.roll = (float)caliberation.roll/2000.0;
+      caliberation.pitch = (float)caliberation.pitch/2000.0;
+      caliberation.yaw = (float)caliberation.yaw/2000.0;
+
 
   }
 
 
-void calcReferenceInput(Signal &signal, REF_RPY &rpy) {
-  rpy.throttle = signal.height;
-  rpy.roll = signal.rgtlft;
-  rpy.pitch = signal.frwrvr ;
-  rpy.yaw = signal.yaw;
+// void calcReferenceInput(Signal &signal, REF_RPY &rpy) {
+//   // rpy.throttle = signal.height;
+//   // rpy.roll = signal.rg/
 
 
-  rpy.throttle = 15;
-  rpy.roll = 0;
-  rpy.pitch = 0 ;
-  rpy.yaw =0;
-  // rpy.roll  =map(rpy.roll,0,1600,0,15);  // 0-1600 to -15 to 15
+//   rpy.throttle = 97000;
+//   rpy.roll = 0;
+//   rpy.pitch = 0 ;
+//   rpy.yaw =0;
 
-  // rpy.pitch =map(rpy.roll,0,1600,0,15);  // 0-1600 to -15 to 15
-
-  // Serial.print("   Roll=");
-
-  // Serial.print(rpy.roll);
-  // rpy.yaw   =map(rpy.roll,0,1600,0,15); // 0-1600 to -15 to 15
-
-}
+// }
 
 
 
 
-void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
+void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy) {
 
   // Calculate the time difference
   currentPIDTime = micros();
   float dt = (currentPIDTime - previousPIDTime)/1000000.0;
   previousPIDTime = currentPIDTime;
+  // Serial.printl
 
-  // Process the Accelerometer, Temperatue and Gyroscope data
-  pGyro.Ax = gyro.ax/16384.0; // Acceleration in X-axis in m/s^2, 0.04 is the offset
-  pGyro.Ay = gyro.ay/16384.0; // Acceleration in Y-axis in m/s^2, 0.04 is the offset
-  pGyro.Az = gyro.az/16384.0; // Acceleration in Z-axis in m/s^2, 0.04 is the offset
-  pGyro.Temp = gyro.temp/340.0 + 36.53; // Temperature in degree Celsius
-
-  
   
   // low pass filter for rate.roll,pitch and yaw data to remove noise
 
+  Rate.roll = gyroX - CALIBER.roll; // Angular velocity in X-axis in degrees per second
+  Rate.pitch = gyroY - CALIBER.pitch; // Angular velocity in Y-axis in degrees per second
+  Rate.yaw = gyroZ  -CALIBER.yaw; // Angular velocity in Z-axis in degrees per second
 
-  Rate.roll = gyro.wx/131.0-CALIBER.roll; // Angular velocity in X-axis in degrees per second
-  Rate.pitch = gyro.wy/131.0-CALIBER.pitch; // Angular velocity in Y-axis in degrees per second
-  Rate.yaw = gyro.wz/131.0-CALIBER.yaw; // Angular velocity in Z-axis in degrees per second
 
-
-  if (abs(Rate.roll)<0.1){
+  if (abs(Rate.roll)<0.10){
     Rate.roll=0;
   }
-  if (abs(Rate.pitch)<0.1){
+  if (abs(Rate.pitch)<0.10){
     Rate.pitch=0;
   }
-  if (abs(Rate.yaw)<0.1){
+  if (abs(Rate.yaw)<0.10){
     Rate.yaw=0;
   }
 
+  // unsigned long a1,a2;
+  // a1=micros();
+  // Serial.print("Rate roll: ");
+  // Serial.print(Rate.roll);
+  // Serial.print(" Rate pitch: ");
+  // Serial.print(Rate.pitch);
+  // Serial.print(" Rate yaw: ");
+  // Serial.println(Rate.yaw);
 
-
-  Serial.print("Rate roll: ");
-  Serial.print(Rate.roll);
-  Serial.print(" Rate pitch: ");
-  Serial.print(Rate.pitch);
-  Serial.print(" Rate yaw: ");
-  Serial.println(Rate.yaw);
-
-
+  // a2=micros();
+  // Serial.print("Time taken by printing rate calculation: ");
+  // Serial.println(a2-a1);
   // Calculate the reference input
-  calcReferenceInput(signal, ref_rpy);
+  // calcReferenceInput(signal, ref_rpy);
+
+// Add signal values to ref_rpy
+
+
+  ref_rpy.throttle = signal.height;
+  ref_rpy.roll = 0;
+  ref_rpy.pitch = 0 ;
+  ref_rpy.yaw =0;
   
   // PID calculation
+  // unsigned long t1,t2;
+
+  // t1=micros();
   
   pidOutput.roll = calcPID(ref_rpy.roll, pid_roll, Rate.roll, prev_error_roll, integral_roll, derivative_roll, dt);
   // Serial.println("PID roll: ");
@@ -412,9 +384,104 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
   pidOutput.yaw = calcPID(ref_rpy.yaw, pid_yaw, Rate.yaw, prev_error_yaw, integral_yaw, derivative_yaw, dt);
   // Serial.print(" PID yaw: ");
   // Serial.println(pidOutput.yaw);
+  // t2=micros();
 
-  motorControl(ref_rpy, pidOutput);
+  // Serial.print("Time taken by PID calculation: ");
+  // Serial.println(t2-t1);
+  // motorControl(ref_rpy, pidOutput);
+
+// a1=micros();
+
+  int motorFrSpeed = ref_rpy.throttle + pidOutput.roll + pidOutput.pitch  + pidOutput.yaw -14000 ;
+  int motorFlSpeed = ref_rpy.throttle - pidOutput.roll + pidOutput.pitch  - pidOutput.yaw ;
+  int motorBrSpeed = ref_rpy.throttle + pidOutput.roll - pidOutput.pitch  - pidOutput.yaw ;
+  int motorBlSpeed = ref_rpy.throttle - pidOutput.roll - pidOutput.pitch  + pidOutput.yaw -14000;
+
+
+
+
+// Limiting motor speeds to 0
+  if (motorFrSpeed<0){
+    motorFrSpeed=0;
+  }
+  if (motorFlSpeed<0){
+    motorFlSpeed=0;
+  }
+  if (motorBrSpeed<0){
+    motorBrSpeed=0;
+  }
+  if (motorBlSpeed<0){
+    motorBlSpeed=0;
+  }
+
+  // Limiting motor speeds to 22000
+  if (motorFrSpeed>142000){
+    motorFrSpeed=142000;
+  } 
+  if (motorFlSpeed>142000){
+    motorFlSpeed=142000;
+  }
+  if (motorBrSpeed>142000){
+    motorBrSpeed=142000;
+  }
+  if (motorBlSpeed>142000){
+    motorBlSpeed=142000;
+  }
+
+
+
+  // Print the motor speeds in one line instead of using 8 lines of print functions
   
+  // Serial.print("1=");
+  // Serial.print(motorFrSpeed);
+  // Serial.print(" 2=");
+  // Serial.print(motorFlSpeed);
+  // Serial.print(" 3=");
+  // Serial.print(motorBrSpeed);
+  // Serial.print(" 4=");
+  // Serial.println(motorBlSpeed);
+
+
+  // Write the motor speeds
+
+  // motorFr.writeMicroseconds(motorFrSpeed);
+  // motorFl.writeMicroseconds(motorFlSpeed);
+  // motorBr.writeMicroseconds(motorBrSpeed);
+  // motorBl.writeMicroseconds(motorBlSpeed);
+// unsigned long x1,x2;
+//   x1=micros();
+
+  PWM.PWMC_Set_Period(1, SERVO_PERIOD);
+  PWM.PWMC_Set_OnOffTime(1, motorBlSpeed);
+  PWM.PWMC_init(1);
+  PWM.PWMC_Enable();
+  delayMicroseconds(100);
+
+  PWM.PWMC_Set_Period(2, SERVO_PERIOD);
+  PWM.PWMC_Set_OnOffTime(2, motorFlSpeed);
+  PWM.PWMC_init(2);
+  PWM.PWMC_Enable();
+  delayMicroseconds(100);
+
+  PWM.PWMC_Set_Period(3, SERVO_PERIOD);
+  PWM.PWMC_Set_OnOffTime(3, motorFrSpeed);
+  PWM.PWMC_init(3);
+  PWM.PWMC_Enable();
+  delayMicroseconds(100);
+
+  PWM.PWMC_Set_Period(4, SERVO_PERIOD);
+  PWM.PWMC_Set_OnOffTime(4, motorBrSpeed);
+  PWM.PWMC_init(4);
+  PWM.PWMC_Enable();
+  delayMicroseconds(100);
+
+// x2=micros();
+
+// Serial.print("Time taken by motorControl function: ");
+// Serial.println(x2-x1);
+  // a2=micros();
+  // Serial.print("Time taken by motorControl function: ");
+  // Serial.println(a2-a1);
 }
 
 
@@ -422,39 +489,34 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput) {
 
 void receiveData() {
 
+  
   if (receiver.available()) {
     // Serial.println("DATA AVAILABLE");
-    receiver.read(&data, sizeof(data));
-    previousRFTime = millis();
+    
+    digitalWrite(blueLed,1);
+    digitalWrite(redLed,1);
+    digitalWrite(greenLed,0);
 
-    Serial.print("height: ");
-    Serial.print(data.height);
-    Serial.print(" frwrvr: ");
-    Serial.print(data.frwrvr);
-    Serial.print(" rgtlft: ");
-    Serial.print(data.rgtlft);
-    Serial.print(" Yaw: ");
-    Serial.println(data.yaw);
+    // delay(100);
+
+    receiver.read(&data, sizeof(data));
+
   }
 
-  else{
-    // Serial.println("NO DATA");
 
+  else{
+    Serial.println("NO DATA");
+    digitalWrite(redLed,0);
+    digitalWrite(greenLed,1);
+    digitalWrite(blueLed,1);
+    // delay(100);
       data.height = data.height;
       data.frwrvr = data.frwrvr;
       data.rgtlft = data.rgtlft;
       data.yaw = data.yaw;
-
   }
 
 }
-// Function to reset previous error values to 0
-void makeZero(PIDoutput &pidOutput) {
-  prev_error_roll = 0.0;
-  prev_error_pitch = 0.0;
-  prev_error_yaw = 0.0;
-}
-
 
 
 
@@ -462,17 +524,13 @@ void makeZero(PIDoutput &pidOutput) {
 void setup() {
 
  // set the serial monitor baud rate
+digitalWrite(blueLed,0);
+digitalWrite(greenLed,1);
+digitalWrite(redLed,1);
 
- Serial.begin(115200);
 
-  //Start the I2C communication
-  // Wire.begin();
-  // Wire.beginTransmission(MPU_addr);
-  // Wire.write(0x6B);  // PWR_MGMT_1 register
-  // Wire.write(1);     // set to zero (wakes up the MPU-6050)
-  // Wire.endTransmission(true);
-  // delay(50);
-  // Wire.beginTransmission(MPU_addr);
+Serial.begin(115200);
+// digitalWrite(greenLed,0);
 
  Wire.beginTransmission(mpu6050); // Start with device write address 
   Wire.write(SMPLRT_DIV);   //Write to sample rate register 0x19
@@ -485,7 +543,7 @@ void setup() {
   Wire.write(PWR_MGMT_1);    //Write to power management register 0x6B
   Wire.write(0x01);    //X axis gyroscope reference frequency
   Wire.endTransmission(true);
-  delayMicroseconds(100);
+  delayMicroseconds(100); 
   
   
   Wire.beginTransmission(mpu6050);
@@ -497,70 +555,152 @@ void setup() {
   
   Wire.beginTransmission(mpu6050);
   Wire.write(GYRO_CONFIG);   //Write to Gyro configuration register 0x1B
-  Wire.write(0x18);    //Full scale range +/- 2000 degree/C
+  Wire.write(0x18);    //Full scale range +/- 1000 degree/C
   Wire.endTransmission(true);
   delayMicroseconds(100);
 
-  calib(Rate, CALIBER);
-
-  motorFr.attach(MOTOR_FR);
-  motorFl.attach(MOTOR_FL);
-  motorBr.attach(MOTOR_BR);
-  motorBl.attach(MOTOR_BL);
-
-
+// digitalWrite(redLed,0);
 
 receiver.begin();
-if (!receiver.begin()) { Serial.println(F("radio hardware not responding!"));}
+if (!receiver.begin()) { 
+  Serial.println(F("radio hardware not responding!"));
+  }
+else {
+  Serial.println(F("radio hardware is responding!"));
+  }
+
 receiver.openReadingPipe(0, address);   //Setting the address at which we will receive the data
 receiver.setPALevel(RF24_PA_MAX);       //You can set this as minimum or maximum depending on the distance between the transmitter and receiver.
 receiver.startListening();       //This sets the module as receiver
-Serial.println("WORKING PROPERLY");
+Serial.print("WORKING PROPERLY");
+
 
 setconst();
-makeZero(pidOutput);
+// makeZero(pidOutput);
 
+
+
+
+int j,k;
+
+for (int i=1;i<5;i++){
+  if (i%2==0){
+      k=9000;
+    }
+  else{
+    k=0;
+  }
+   for (j = 60000; j<104000;j+=1000){
+    
+    PWM.PWMC_Set_Period(i, SERVO_PERIOD);
+    PWM.PWMC_Set_OnOffTime(i, j+k);
+    PWM.PWMC_init(i);
+    PWM.PWMC_Enable();
+    delay(100);
+    digitalWrite(redLed,0);
+
+   }
+   PWM.PWMC_Set_Period(i, SERVO_PERIOD);
+    PWM.PWMC_Set_OnOffTime(i, 0);
+    PWM.PWMC_init(i);
+    PWM.PWMC_Enable();
+    delay(500);
+
+}
+
+  delay(8000);
+
+calib(Rate, CALIBER);
+
+
+  // for (int i=1;i<5;i++){
+  //   PWM.PWMC_Set_Period(i, SERVO_PERIOD);
+  //   PWM.PWMC_Set_OnOffTime(i, 0);
+  //   PWM.PWMC_init(i);
+  //   PWM.PWMC_Enable();
+  //   delay(100);
+  // }
+
+
+
+// // Print Caliberation values
+// Serial.print("Caliberation roll: ");
+// Serial.print(CALIBER.roll);
+// Serial.print(" Caliberation pitch: ");
+// Serial.print(CALIBER.pitch);
+// Serial.print(" Caliberation yaw: ");
+// Serial.println(CALIBER.yaw);
+
+// delay(2000);
 
 } 
 
 
-
-int a=0;
+unsigned long p1,p2;
 
 void loop(){
 
+
+// delay(2000);
 receiveData();
 
+// previousRFTime = micros();
+// gyroData(gyro);
+// currentRFTime = micros();
+// for (int z=0;z<20;z++)
+// {
 
-gyroData(gyro);
+  Wire.beginTransmission(mpu6050); // Start the transmission
+  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(true); // End the transmission
+  Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
+  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+  Wire.endTransmission(true); // End the transmission
+  // delayMicroseconds(50);
+  a = (float)Wx/131.0;
+  b = (float)Wy/131.0;
+  c = (float)Wz/131.0;
+// }
 
-// update_rates();
-calcInput(data, gyro, pidOutput);
 
-// Serial.print("   Pitch=");
-// Serial.print(pidOutput.pitch);
-// Serial.print("   Roll=");
-// Serial.print(pidOutput.roll);
-// Serial.print("   Yaw=");
-// Serial.print(pidOutput.yaw);
+  gyroX = a;
+  gyroY = b;
+  gyroZ = c;
 
-// Serial.print("   Ax=");
-// Serial.print(gyro.ax);
-// Serial.print("   Ay=");
-// Serial.print(gyro.ay);
-// Serial.print("   Az=");
-// Serial.print(gyro.az);
 
-// Serial.print("   Wx=");
-// Serial.print(gyro.wx);
-// Serial.print("   Wy=");
-// Serial.print(gyro.wy);
-// Serial.print("   Wz=");
-// Serial.println(gyro.wz);
+calcInput(data, gyro, pidOutput,ref_rpy);
 
-delay(200);
+
+// Serial.print("Time taken by calc() function: ");
+// Serial.println(currentRFTime - previousRFTime);
+
+
+
+// delay(7);
+
+
+
+// Serial.print("Time taken by loop function: ");
+
+// p2=micros();
+delay(3);
+
+// Serial.println(p2-p1);
+
+// p1=micros();
 
 }
+
+
+
+
+
 
 
 
