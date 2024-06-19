@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "random": "cpp",
-        "angle mode": "c"
+        "angle mode": "c",
+        "cmath": "cpp"
     }
 }
