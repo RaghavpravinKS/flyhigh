@@ -306,40 +306,25 @@ void calib (rate &rate,caliberation &caliberation)
 
     for ( int iterations=0;iterations<2000;iterations++){
       
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x05);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1C);
-  Wire.write(0x10);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x3B);
-  Wire.endTransmission(); 
-  Wire.requestFrom(0x68,6);
-  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B); 
-  Wire.write(0x8);
-  Wire.endTransmission();                                                   
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68,6);
-  int16_t GyroX=Wire.read()<<8 | Wire.read();
-  int16_t GyroY=Wire.read()<<8 | Wire.read();
-  int16_t GyroZ=Wire.read()<<8 | Wire.read();
-
-
-  a = (float)GyroX/65.5;
-  b = (float)GyroY/65.5;
-  c = (float)GyroZ/65.5;
-  d= (float)AccXLSB/4096.0;
-  e= (float)AccYLSB/4096.0;
-  f= (float)AccZLSB/4096.0;
+  Wire.beginTransmission(mpu6050); // Start the transmission
+  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false); // End the transmission
+  Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
+  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+  Wire.endTransmission(true); // End the transmission
+  // delayMicroseconds(50);
+  a = (float)Wx/65.5;
+  b = (float)Wy/65.5;
+  c = (float)Wz/65.5;
+  d= (float)Ax/4096.0;
+  e= (float)Ay/4096.0;
+  f= (float)Az/4096.0;
 
 // }
   gyroX = a;
@@ -634,7 +619,6 @@ digitalWrite(redLed,1);
 Serial.begin(115200);
 // digitalWrite(greenLed,0);
 
-
  Wire.beginTransmission(mpu6050); // Start with device write address 
   Wire.write(SMPLRT_DIV);   //Write to sample rate register 0x19
   Wire.write(0x07);     //1KHz sample rate
@@ -655,23 +639,13 @@ Serial.begin(115200);
   Wire.endTransmission(true);
   delayMicroseconds(100);
   
-  // Wire.beginTransmission(0x68);
-  // Wire.write(0x1C);
-  // Wire.write(0x10);
-  // Wire.endTransmission();
-
-  // Wire.beginTransmission(0x68);
-  // Wire.write(0x1B);
-  // Wire.write(0x08);
-  // Wire.endTransmission();
-
+  
   Wire.beginTransmission(mpu6050);
   Wire.write(GYRO_CONFIG);   //Write to Gyro configuration register 0x1B
   Wire.write(0x8);    //Full scale range +/- 1000 degree/C
   Wire.endTransmission(true);
   delayMicroseconds(100);
 
- 
 // digitalWrite(redLed,0);
 
 receiver.begin();
@@ -780,40 +754,27 @@ receiveData();
 // for (int z=0;z<20;z++)
 // {
 
- Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x05);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1C);
-  Wire.write(0x10);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x3B);
-  Wire.endTransmission(); 
-  Wire.requestFrom(0x68,6);
-  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B); 
-  Wire.write(0x8);
-  Wire.endTransmission();                                                   
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68,6);
-  int16_t GyroX=Wire.read()<<8 | Wire.read();
-  int16_t GyroY=Wire.read()<<8 | Wire.read();
-  int16_t GyroZ=Wire.read()<<8 | Wire.read();
+  Wire.beginTransmission(mpu6050); // Start the transmission
+  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false); // End the transmission
+  Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
+  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+  Wire.endTransmission(true); // End the transmission
+  // delayMicroseconds(50);
+  a = (float)Wx/65.0;
+  b = (float)Wy/65.0;
+  c = (float)Wz/65.0;
+  d= (float)Ax/4096.0;
+  e= (float)Ay/4096.0;
+  f= (float)Az/4096.0;
 
-
-  a = (float)GyroX/65.5;
-  b = (float)GyroY/65.5;
-  c = (float)GyroZ/65.5;
-  d= (float)AccXLSB/4096.0;
-  e= (float)AccYLSB/4096.0;
-  f= (float)AccZLSB/4096.0;
+// }
 
   gyroX = a;
   gyroY = b;
@@ -822,21 +783,13 @@ receiveData();
   accelY = e;
   accelZ = f;
 
-Serial.print("accel X: ");
-Serial.print(accelX);
-Serial.print(" ");
-Serial.print(accelY);
-Serial.print(" ");
-Serial.println(accelZ);
-
 AngleRoll =  atan(accelY/sqrt(accelX*accelX+accelZ*accelZ))*(180/3.142);
 AnglePitch= -atan(accelX/sqrt(accelY*accelY+accelZ*accelZ))*(180/3.142);
 
-
-// Serial.print("Angle Roll: ");
-// Serial.print(AngleRoll);
-// Serial.print(" Angle Pitch: ");
-// Serial.println(AnglePitch);
+Serial.print("Angle Roll: ");
+Serial.print(AngleRoll);
+Serial.print(" Angle Pitch: ");
+Serial.println(AnglePitch);
 
 
 
