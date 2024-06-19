@@ -3,5 +3,5 @@
     "configuration": "clksrc=aries100,FlashMode=on",
     "board": "vega:riscv:aries_v3",
     "programmer": "vegaflasher",
-    "sketch": "receiver_nrf24\\receiver_nrf24.ino"
+    "sketch": "receiver_nrf24\\Angle Mode.ino"
 }
