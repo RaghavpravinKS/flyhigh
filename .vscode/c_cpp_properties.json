@@ -22,10 +22,8 @@
             "includePath": [
                 "C:\\Users\\91940\\AppData\\Local\\Arduino15\\packages\\vega\\hardware\\riscv\\1.0.7\\cores\\arduino",
                 "C:\\Users\\91940\\AppData\\Local\\Arduino15\\packages\\vega\\hardware\\riscv\\1.0.7\\variants\\standard",
-                "C:\\Users\\91940\\AppData\\Local\\Arduino15\\packages\\vega\\hardware\\riscv\\1.0.7\\libraries\\SERVO",
-                "C:\\Users\\91940\\Documents\\Arduino\\libraries\\RF24",
                 "C:\\Users\\91940\\AppData\\Local\\Arduino15\\packages\\vega\\hardware\\riscv\\1.0.7\\libraries\\SPI\\src",
-                "C:\\Users\\91940\\AppData\\Local\\Arduino15\\packages\\vega\\hardware\\riscv\\1.0.7\\libraries\\Wire\\src",
+                "C:\\Users\\91940\\Documents\\Arduino\\libraries\\RF24",
                 "c:\\users\\91940\\appdata\\local\\arduino15\\packages\\vega\\tools\\riscv64-vega-elf-gcc\\001\\riscv64-unknown-elf\\include\\c++\\10.1.0",
                 "c:\\users\\91940\\appdata\\local\\arduino15\\packages\\vega\\tools\\riscv64-vega-elf-gcc\\001\\riscv64-unknown-elf\\include\\c++\\10.1.0\\riscv64-unknown-elf\\rv64imafdc\\lp64d",
                 "c:\\users\\91940\\appdata\\local\\arduino15\\packages\\vega\\tools\\riscv64-vega-elf-gcc\\001\\riscv64-unknown-elf\\include\\c++\\10.1.0\\backward",

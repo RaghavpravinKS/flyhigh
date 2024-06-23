@@ -227,11 +227,11 @@ pid_yaw.Kp=75;
 pid_yaw.Ki=25;
 pid_yaw.Kd=0;
 
-pid_kalman_roll.Kp=6;
+pid_kalman_roll.Kp=10;
 pid_kalman_roll.Ki=0;
 pid_kalman_roll.Kd=0;
 
-pid_kalman_pitch.Kp=6;
+pid_kalman_pitch.Kp=10;
 pid_kalman_pitch.Ki=0;
 pid_kalman_pitch.Kd=0;
 
@@ -458,13 +458,13 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy
 
   // t1=micros();
 
-// kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, Rate.roll, AngleRoll);
+kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, Rate.roll, AngleRoll);
 
-// KalmanAngleRoll=Kalman1DOutput[0]; KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
+KalmanAngleRoll=Kalman1DOutput[0]; KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
 
-// kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, Rate.pitch, AnglePitch);
+kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, Rate.pitch, AnglePitch);
 
-// KalmanAnglePitch=Kalman1DOutput[0]; KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+KalmanAnglePitch=Kalman1DOutput[0]; KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
 
 // if (index>500){
 //   KalmanAngleRoll-=ck_roll/500;
@@ -475,10 +475,10 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy
 // ref_rpy.KalmanRoll=KalmanAngleRoll;
 // ref_rpy.KalmanPitch=KalmanAnglePitch;
 
-// Serial.print("Kalman Roll: ");
-// Serial.print(KalmanAngleRoll);
-// Serial.print("                      Kalman Pitch: ");
-// Serial.println(KalmanAnglePitch);
+Serial.print("Kalman Roll: ");
+Serial.print(KalmanAngleRoll);
+Serial.print(" Kalman Pitch: ");
+Serial.println(KalmanAnglePitch);
 
 // Serial.print("Angle Roll: ");
 // Serial.print(AngleRoll);
@@ -505,10 +505,10 @@ if (ref_rpy.throttle>95000){
 ref_rpy.roll  = calcPID(KalmanAngleRoll, pid_kalman_roll, AngleRoll, prev_error_kalman_roll, integral_kalman_roll, derivative_kalman_roll, dt);
 ref_rpy.pitch = calcPID(KalmanAnglePitch, pid_kalman_pitch, AnglePitch, prev_error_kalman_pitch, integral_kalman_pitch, derivative_kalman_pitch, dt);
   
-// Serial.print("Roll: ");
-// Serial.print(ref_rpy.roll);
-// Serial.print(" Pitch: ");
-// Serial.println(ref_rpy.pitch);
+// Serial.print("Roll Angle: ");
+// Serial.print(AngleRoll);
+// Serial.print(" Pitch Angle: ");
+// Serial.println(AnglePitch);
 
   pidOutput.roll = calcPID(ref_rpy.roll, pid_roll, Rate.roll, prev_error_roll, integral_roll, derivative_roll, dt);
   // Serial.println("PID roll: ");
