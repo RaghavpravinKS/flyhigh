@@ -1,7 +1,7 @@
 {
-    "port": "COM7",
+    "port": "COM3",
     "configuration": "clksrc=aries100,FlashMode=on",
     "board": "vega:riscv:aries_v3",
     "programmer": "vegaflasher",
-    "sketch": "Angle_Mode\\Angle_Mode.ino"
+    "sketch": "Transmt_test\\Transmt_test.ino"
 }
