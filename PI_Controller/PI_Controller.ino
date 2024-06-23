@@ -28,6 +28,8 @@ const byte address[6] = "101000";
 #define MOTOR_3 3
 #define MOTOR_4 4
 
+#define FILTER_SIZE 10  // Adjust this value as needed
+
 // Motor PWMs
 int Motor1 = 0;
 int Motor2 = 0;
@@ -58,14 +60,6 @@ float kalman_1d_output[] = {0, 0};
 
 Signal rx_data;
 
-// Moving average
-#define NUM_SAMPLES 50  // Number of samples in the moving average window
-
-int roll_buffer[NUM_SAMPLES];
-int pitch_buffer[NUM_SAMPLES];
-int roll_buffer_index = 0;
-int pitch_buffer_index = 0;
-
 // Complementary filter constant
 float alpha = 0.98;
 const float dt = 0.002;
@@ -91,6 +85,10 @@ float pitch_derivative = 0;
 float rate_yaw_derivative = 0;
 
 float roll_output, pitch_output, rate_yaw_output;
+
+float roll_filter_buffer[FILTER_SIZE];
+float pitch_filter_buffer[FILTER_SIZE];
+int filter_index = 0;
 
 float Kp_roll = 125.0;
 float Ki_roll = 10;
@@ -325,29 +323,29 @@ void loop() {
     // pitch = (1/2.05)*(1.05*kalmanAnglePitch + kal_pitch);
     // roll = kalmanAngleRoll;
     // pitch = kalmanAnglePitch;
-    rate_yaw = Gz_cal;
-    // Add new roll and pitch values to the buffer
-    roll_buffer[roll_buffer_index] = roll;
-    pitch_buffer[pitch_buffer_index] = pitch;
 
-    // Update buffer index
-    roll_buffer_index = (roll_buffer_index + 1) % NUM_SAMPLES;
-    pitch_buffer_index = (pitch_buffer_index + 1) % NUM_SAMPLES;
+    // Update filter buffer
+    roll_filter_buffer[filter_index] = roll;
+    pitch_filter_buffer[filter_index] = pitch;
 
-    int roll_sum = 0;
-    int pitch_sum = 0;
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        roll_sum += roll_buffer[i];
-        pitch_sum += pitch_buffer[i];
+    // Calculate moving average
+    float roll_filtered = 0.0;
+    float pitch_filtered = 0.0;
+    for (int i = 0; i < FILTER_SIZE; i++) {
+        roll_filtered += roll_filter_buffer[i];
+        pitch_filtered += pitch_filter_buffer[i];
     }
+    roll_filtered /= FILTER_SIZE;
+    pitch_filtered /= FILTER_SIZE;
 
-    // Calculate moving average for roll and pitch
-    float roll_avg = (float)roll_sum / NUM_SAMPLES;
-    float pitch_avg = (float)pitch_sum / NUM_SAMPLES;
-
-      // Use the moving average for further calculations
-    roll = roll_avg;
-    pitch = pitch_avg;
+    // Update filter index (circular buffer)
+    filter_index++;
+    if (filter_index >= FILTER_SIZE) {
+        filter_index = 0;
+    }
+    roll = roll_filtered;
+    pitch = pitch_filtered;
+    rate_yaw = Gz_cal;
 
     // Add dead zone
     if (abs(roll) < 1.5) roll = 0;
