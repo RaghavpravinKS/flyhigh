@@ -53,6 +53,22 @@ const byte address[6] = "101000";
 
 Servo bldc;
 
+
+// Servo objects for four motors
+Servo motorFr; // Front Right Motor
+Servo motorFl; // Front Left Motor
+Servo motorBr; // Back Right Motor
+Servo motorBl; // Back Left Motor
+
+// Pins for the motors (ESCs)
+#define MOTOR_FR 3
+#define MOTOR_FL 2
+#define MOTOR_BR 4
+#define MOTOR_BL 1
+
+
+
+
 struct Gyro {
   float ax;
   float ay;
@@ -87,18 +103,6 @@ struct Signal {
   int  rgtlft;
   int yaw;
 };
-
-// Servo objects for four motors
-Servo motorFr; // Front Right Motor
-Servo motorFl; // Front Left Motor
-Servo motorBr; // Back Right Motor
-Servo motorBl; // Back Left Motor
-
-// Pins for the motors (ESCs)
-#define MOTOR_FR 3
-#define MOTOR_FL 2
-#define MOTOR_BR 4
-#define MOTOR_BL 1
 
 
 
@@ -136,10 +140,10 @@ struct caliberation{
   float roll;
   float pitch;
   float yaw;
-  float ax;
-  float ay;
-  float az;
-
+  float roll_angle;
+  float pitch_angle;
+  float kal_roll;
+  float kal_pitch;
 };
 
 // Variabkes to keep track of the PID errors
@@ -185,12 +189,6 @@ float prev_error_yaw = 0.0;
 float prev_error_kalman_roll = 0.0;
 float prev_error_kalman_pitch = 0.0;
 
-
-
-
-
-
-
 // Carrying caliberation values
 
 caliberation CALIBER_VAL;
@@ -213,37 +211,65 @@ float KalmanAngleRoll=0, KalmanUncertaintyAngleRoll=2*2;
 float KalmanAnglePitch=0, KalmanUncertaintyAnglePitch=2*2;
 float Kalman1DOutput[]={0,0};
 
+
+
+
+void setconst2(){
+pid_roll.Kp=75;
+pid_roll.Ki=30;
+pid_roll.Kd=0;
+
+pid_pitch.Kp=75; 
+pid_pitch.Ki=30;
+pid_pitch.Kd=0;
+
+pid_yaw.Kp=75;
+pid_yaw.Ki=25;
+pid_yaw.Kd=0;
+
+pid_kalman_roll.Kp=6;
+pid_kalman_roll.Ki=0;
+pid_kalman_roll.Kd=0;
+
+pid_kalman_pitch.Kp=6;
+pid_kalman_pitch.Ki=0;
+pid_kalman_pitch.Kd=0;
+
+}
+
+
+
+
 // Function to implement the PID
 float calcPID(float ref, PID &pid, float actual, float &prev_error, float &integral, float &derivative, float &dt) {
 
   // Calculate the error
+
   float error = ref - actual;
 
+
+
   // Calculate the integral
-  integral = integral + error*dt;
+  integral = integral + ((error+prev_error)/2 )*dt;
 
   
   // Calculate the derivative
   derivative = (error - prev_error)/dt;
 
   // Calculate the PID output
-  float output = pid.Kp * error + pid.Ki * integral + pid.Kd * derivative;
+  if (pid.Ki*integral>5500){
+    integral=5500/pid.Ki;
+  }
+  if (pid.Ki*integral<-5500){
+    integral=-5500/pid.Ki;
+  }
 
-//  if (output>90){
-//     output=90;
-//  }
-//  if (output<-90){
-//     output=-90; 
-//   }
+  float output = pid.Kp * error + pid.Ki * integral + pid.Kd * derivative;
 
   // Update the previous error
   prev_error = error;
-  return output;
 
-  if (output<0){
-    output=0;
-  
-  }
+  return output;
 
 }
 
@@ -259,45 +285,60 @@ float gyroX,gyroY,gyroZ;
 float accelX,accelY,accelZ;
 float AngleRoll, AnglePitch;
 
-void setconst2(){
-pid_roll.Kp=500;
-pid_roll.Ki=0;
-pid_roll.Kd=0;
 
-pid_pitch.Kp=500; 
-pid_pitch.Ki=0;
-pid_pitch.Kd=0;
 
-pid_yaw.Kp=500;
-pid_yaw.Ki=0;
-pid_yaw.Kd=0;
+void gyroData(Gyro &gyro) {
 
-pid_kalman_roll.Kp=10;
-pid_kalman_roll.Ki=0;
-pid_kalman_roll.Kd=0;
+ Wire.beginTransmission(mpu6050); // Start the transmission
+  Wire.write(0x1A);
+  Wire.write(0x05);
+  Wire.endTransmission();
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x1C);
+  Wire.write(0x10);
+  Wire.endTransmission();
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x3B);
+  Wire.endTransmission(); 
 
-pid_kalman_pitch.Kp=10;
-pid_kalman_pitch.Ki=0;
-pid_kalman_pitch.Kd=0;
+  Wire.requestFrom(mpu6050,6);
+  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
+  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
+  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
+
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x1B); 
+  Wire.write(0x8);
+  Wire.endTransmission();    
+
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x43);
+  Wire.endTransmission();
+  Wire.requestFrom(mpu6050,6);
+
+  int16_t GyroX=Wire.read()<<8 | Wire.read();
+  int16_t GyroY=Wire.read()<<8 | Wire.read();
+  int16_t GyroZ=Wire.read()<<8 | Wire.read();
+
+  gyroX   = (float)GyroX/65.0;
+  gyroY   = (float)GyroY/65.0;
+  gyroZ   = (float)GyroZ/65.0;
+  accelX  = (float)AccXLSB/4096.0;
+  accelY  = (float)AccYLSB/4096.0;
+  accelZ  = (float)AccZLSB/4096.0;
+
+
+
+AngleRoll=atan(accelY/sqrt(accelX*accelX+accelZ*accelZ))*(180/3.142);
+AnglePitch=-atan(accelX/sqrt(accelY*accelY+accelZ*accelZ))*(180/3.142);
+
+
 
 }
 
+float ck_roll, ck_pitch;
 
-// void gyroData(Gyro &gyro) {
-
-// // for (int z=0;z<20;z++)
-// // {
-
-// // AngleRoll=atan(accelY/sqrt(accelX*accelX+accelZ*accelZ))*(180/3.142);
-// // AnglePitch=-atan(accelX/sqrt(accelY*accelY+accelZ*accelZ))*(180/3.142);
-
-// // Serial.print("Angle Roll: ");
-// // Serial.print(AngleRoll);
-// // Serial.print(" Angle Pitch: ");
-// // Serial.println(AnglePitch);
-// }
-
-
+int index=0;
 
 
 
@@ -305,53 +346,42 @@ void calib (rate &rate,caliberation &caliberation)
   {
 
     for ( int iterations=0;iterations<2000;iterations++){
-      
-  Wire.beginTransmission(mpu6050); // Start the transmission
-  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
-  Wire.endTransmission(false); // End the transmission
-  Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
-  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
-  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
-  Wire.endTransmission(true); // End the transmission
-  // delayMicroseconds(50);
-  a = (float)Wx/65.5;
-  b = (float)Wy/65.5;
-  c = (float)Wz/65.5;
-  d= (float)Ax/4096.0;
-  e= (float)Ay/4096.0;
-  f= (float)Az/4096.0;
+      gyroData(gyro);
 
-// }
-  gyroX = a;
-  gyroY = b;
-  gyroZ = c;
-  accelX = d;
-  accelY = e;
-  accelZ = f;
+  // rate.roll = gyro.wx; // Angular velocity in X-axis in degrees per second
+  // rate.pitch = gyro.wy; // Angular velocity in Y-axis in degrees per second
+  // rate.yaw = gyro.wz; // Angular velocity in Z-axis in degrees per second
+
+
 
 
       caliberation.roll += gyroX;
       caliberation.pitch += gyroY;
       caliberation.yaw += gyroZ;
-      caliberation.ax += accelX;
-      caliberation.ay += accelY;
-      caliberation.az +=accelZ;
 
-      delay(10);
+      caliberation.roll_angle += AngleRoll;
+      caliberation.pitch_angle += AnglePitch;
+
+      // caliberation.kal_roll += KalmanAngleRoll;
+      // caliberation.kal_pitch += KalmanAnglePitch;
+
+      
+
+
+      delay(1);
 
     }
 
       caliberation.roll = (float)caliberation.roll/2000.0;
       caliberation.pitch = (float)caliberation.pitch/2000.0;
       caliberation.yaw = (float)caliberation.yaw/2000.0;
-      caliberation.ax = (float)caliberation.ax/2000.0;
-      caliberation.ay = (float)caliberation.ay/2000.0;
-      caliberation.az = (float)caliberation.az/2000.0;
+      caliberation.roll_angle = (float)caliberation.roll_angle/2000.0;
+      caliberation.pitch_angle = (float)caliberation.pitch_angle/2000.0;
+
+      // caliberation.kal_roll = (float)caliberation.kal_roll/2000.0;
+      // caliberation.kal_pitch = (float)caliberation.kal_pitch/2000.0;
+
+
 
   }
 
@@ -385,9 +415,9 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy
   Rate.roll = gyroX - CALIBER_VAL.roll; // Angular velocity in X-axis in degrees per second
   Rate.pitch = gyroY - CALIBER_VAL.pitch; // Angular velocity in Y-axis in degrees per second
   Rate.yaw = gyroZ  -CALIBER_VAL.yaw; // Angular velocity in Z-axis in degrees per second
+  AngleRoll=AngleRoll-CALIBER_VAL.roll_angle;
+  AnglePitch=AnglePitch-CALIBER_VAL.pitch_angle;
 
-  // AngleRoll=AngleRoll-CALIBER_VAL.roll_angle;
-  // AnglePitch=AnglePitch-CALIBER_VAL.pitch_angle;
 
   if (abs(Rate.roll)<0.10){
     Rate.roll=0;
@@ -398,23 +428,24 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy
   if (abs(Rate.yaw)<0.10){
     Rate.yaw=0;
   }
+  if(abs(AngleRoll)<0.05){
+    AngleRoll=0;
+  } 
+  if(abs(AnglePitch)<0.05){
+    AnglePitch=0;
+  }
 
-  // unsigned long a1,a2;
-  // a1=micros();
-  // Serial.print("Rate roll: ");
-  // Serial.print(Rate.roll);
-  // Serial.print(" Rate pitch: ");
-  // Serial.print(Rate.pitch);
-  // Serial.print(" Rate yaw: ");
-  // Serial.println(Rate.yaw);
 
-  // a2=micros();
-  // Serial.print("Time taken by printing rate calculation: ");
-  // Serial.println(a2-a1);
-  // Calculate the reference input
-  // calcReferenceInput(signal, ref_rpy);
-
-// Add signal values to ref_rpy
+// Serial.print("Angle Roll: "); 
+// Serial.print(AngleRoll);
+// Serial.print(" Angle Pitch: ");
+// Serial.println(AnglePitch);
+//   Serial.print("Rate roll: ");
+//   Serial.print(Rate.roll);
+//   Serial.print(" Rate pitch: ");
+//   Serial.print(Rate.pitch);
+//   Serial.print(" Rate yaw: ");
+//   Serial.println(Rate.yaw);
 
 
   ref_rpy.throttle = signal.height;
@@ -427,21 +458,52 @@ void calcInput(Signal &signal, Gyro &gyro, PIDoutput &pidOutput,REF_RPY &ref_rpy
 
   // t1=micros();
 
-kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, Rate.roll, AngleRoll);
+// kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, Rate.roll, AngleRoll);
 
-KalmanAngleRoll=Kalman1DOutput[0]; KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
+// KalmanAngleRoll=Kalman1DOutput[0]; KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
 
-kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, Rate.pitch, AnglePitch);
+// kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, Rate.pitch, AnglePitch);
 
-KalmanAnglePitch=Kalman1DOutput[0]; KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+// KalmanAnglePitch=Kalman1DOutput[0]; KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+
+// if (index>500){
+//   KalmanAngleRoll-=ck_roll/500;
+//   KalmanAnglePitch-=ck_pitch/500;
+
+// }
+
+// ref_rpy.KalmanRoll=KalmanAngleRoll;
+// ref_rpy.KalmanPitch=KalmanAnglePitch;
+
+// Serial.print("Kalman Roll: ");
+// Serial.print(KalmanAngleRoll);
+// Serial.print("                      Kalman Pitch: ");
+// Serial.println(KalmanAnglePitch);
+
+// Serial.print("Angle Roll: ");
+// Serial.print(AngleRoll);
+// Serial.print(" Angle Pitch: ");
+// Serial.println(AnglePitch);
+
+// if (ref_rpy.throttle>95000){
+if (ref_rpy.throttle>95000){
+  pid_roll.Kp=100;
+  pid_roll.Ki=35;
+  pid_roll.Kd=0;
+
+  pid_pitch.Kp=100;
+  pid_pitch.Ki=35;
+  pid_pitch.Kd=0;
+
+  pid_yaw.Kp=100;
+  pid_yaw.Ki=35;
+  pid_yaw.Kd=0;
+
+}
 
 
-
-ref_rpy.KalmanRoll=KalmanAngleRoll;
-ref_rpy.KalmanPitch=KalmanAnglePitch;
-
-ref_rpy.roll  = calcPID(ref_rpy.KalmanRoll, pid_kalman_roll, AngleRoll, prev_error_kalman_roll, integral_kalman_roll, derivative_kalman_roll, dt);
-ref_rpy.pitch = calcPID(ref_rpy.KalmanPitch, pid_kalman_pitch, AnglePitch, prev_error_kalman_pitch, integral_kalman_pitch, derivative_kalman_pitch, dt);
+ref_rpy.roll  = calcPID(KalmanAngleRoll, pid_kalman_roll, AngleRoll, prev_error_kalman_roll, integral_kalman_roll, derivative_kalman_roll, dt);
+ref_rpy.pitch = calcPID(KalmanAnglePitch, pid_kalman_pitch, AnglePitch, prev_error_kalman_pitch, integral_kalman_pitch, derivative_kalman_pitch, dt);
   
 // Serial.print("Roll: ");
 // Serial.print(ref_rpy.roll);
@@ -457,6 +519,15 @@ ref_rpy.pitch = calcPID(ref_rpy.KalmanPitch, pid_kalman_pitch, AnglePitch, prev_
   // Serial.print(pidOutput.pitch);
 
   pidOutput.yaw = calcPID(ref_rpy.yaw, pid_yaw, Rate.yaw, prev_error_yaw, integral_yaw, derivative_yaw, dt);
+  // }
+
+
+  // else{
+  //   pidOutput.roll=0;
+  //   pidOutput.pitch=0;
+  //   pidOutput.yaw=0;
+  // }
+
 
   // Serial.print(" PID yaw: ");
   // Serial.println(pidOutput.yaw);
@@ -468,12 +539,10 @@ ref_rpy.pitch = calcPID(ref_rpy.KalmanPitch, pid_kalman_pitch, AnglePitch, prev_
 
 // a1=micros();
 
-  int motorFrSpeed = ref_rpy.throttle + pidOutput.roll + pidOutput.pitch  + pidOutput.yaw ;
-  int motorFlSpeed = ref_rpy.throttle - pidOutput.roll + pidOutput.pitch  - pidOutput.yaw ;
-  int motorBrSpeed = ref_rpy.throttle + pidOutput.roll - pidOutput.pitch  - pidOutput.yaw ;
-  int motorBlSpeed = ref_rpy.throttle - pidOutput.roll - pidOutput.pitch  + pidOutput.yaw ;
-
-
+  int motorFrSpeed = (ref_rpy.throttle +  pidOutput.roll + pidOutput.pitch  + pidOutput.yaw)*0.920; //3
+  int motorFlSpeed = (ref_rpy.throttle - pidOutput.roll + pidOutput.pitch  - pidOutput.yaw)*1.0400 ;       //2
+  int motorBrSpeed = (ref_rpy.throttle + pidOutput.roll - pidOutput.pitch  - pidOutput.yaw)*1.0040;       //4
+  int motorBlSpeed = (ref_rpy.throttle -  pidOutput.roll - pidOutput.pitch  + pidOutput.yaw)*0.900; //1
 
 
 // Limiting motor speeds to 0
@@ -596,6 +665,7 @@ void receiveData() {
 
 
 void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, float KalmanMeasurement) {
+
   KalmanState=KalmanState+0.004*KalmanInput;
   KalmanUncertainty=KalmanUncertainty + 0.004 * 0.004 * 4 * 4;
   float KalmanGain=KalmanUncertainty * 1/(1*KalmanUncertainty + 3 * 3);
@@ -605,11 +675,13 @@ void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, fl
   KalmanUncertainty=(1-KalmanGain) * KalmanUncertainty;
   Kalman1DOutput[0]=KalmanState; 
   Kalman1DOutput[1]=KalmanUncertainty;
+
 }
 
 
 void setup() {
 
+delay(1000);
  // set the serial monitor baud rate
 digitalWrite(blueLed,0);
 digitalWrite(greenLed,1);
@@ -628,23 +700,23 @@ Serial.begin(115200);
 
   Wire.beginTransmission(mpu6050);
   Wire.write(PWR_MGMT_1);    //Write to power management register 0x6B
-  Wire.write(0x01);    //X axis gyroscope reference frequency
+  Wire.write(0x00);    //X axis gyroscope reference frequency
   Wire.endTransmission(true);
   delayMicroseconds(100); 
   
   
-  Wire.beginTransmission(mpu6050);
-  Wire.write(CONFIG);      // Write to Configuration register 0x1A
-  Wire.write(0x00);    //Fs = 8KHz
-  Wire.endTransmission(true);
-  delayMicroseconds(100);
+  // Wire.beginTransmission(mpu6050);
+  // Wire.write(CONFIG);      // Write to Configuration register 0x1A
+  // Wire.write(0x00);    //Fs = 8KHz
+  // Wire.endTransmission(true);
+  // delayMicroseconds(100);
   
   
-  Wire.beginTransmission(mpu6050);
-  Wire.write(GYRO_CONFIG);   //Write to Gyro configuration register 0x1B
-  Wire.write(0x8);    //Full scale range +/- 1000 degree/C
-  Wire.endTransmission(true);
-  delayMicroseconds(100);
+  // Wire.beginTransmission(mpu6050);
+  // Wire.write(GYRO_CONFIG);   //Write to Gyro configuration register 0x1B
+  // Wire.write(0x8);    //Full scale range +/- 1000 degree/C
+  // Wire.endTransmission(true);
+  // delayMicroseconds(100);
 
 // digitalWrite(redLed,0);
 
@@ -668,34 +740,34 @@ setconst2();
 
 
 
-// int j,k;
+int j,k;
 
-// for (int i=1;i<5;i++){
-//   if (i%2==0){
-//       k=9000;
-//     }
-//   else{
-//     k=0;
-//   }
-//    for (j = 60000; j<104000;j+=1000){
+for (int i=1;i<5;i++){
+  if (i%2==0){
+      k=12000;
+    }
+  else{
+    k=0;
+  }
+   for (j = 60000; j<100000;j+=1000){
     
-//     PWM.PWMC_Set_Period(i, SERVO_PERIOD);
-//     PWM.PWMC_Set_OnOffTime(i, j+k);
-//     PWM.PWMC_init(i);
-//     PWM.PWMC_Enable();
-//     delay(100);
-//     digitalWrite(redLed,0);
+    PWM.PWMC_Set_Period(i, SERVO_PERIOD);
+    PWM.PWMC_Set_OnOffTime(i, j+k);
+    PWM.PWMC_init(i);
+    PWM.PWMC_Enable();
+    delay(100);
+    digitalWrite(redLed,0);
 
-//    }
-//    PWM.PWMC_Set_Period(i, SERVO_PERIOD);
-//     PWM.PWMC_Set_OnOffTime(i, 0);
-//     PWM.PWMC_init(i);
-//     PWM.PWMC_Enable();
-//     delay(500);
+   }
+   PWM.PWMC_Set_Period(i, SERVO_PERIOD);
+    PWM.PWMC_Set_OnOffTime(i, 0);
+    PWM.PWMC_init(i);
+    PWM.PWMC_Enable();
+    delay(500);}
 
-// }
 
-//   delay(8000);
+
+  delay(8000);
 
 calib(Rate, CALIBER_VAL);
 
@@ -711,21 +783,14 @@ calib(Rate, CALIBER_VAL);
 
 
 // // Print Caliberation values
-Serial.print("Caliberation roll: ");
-Serial.print(CALIBER_VAL.roll);
-Serial.print(" Caliberation pitch: ");
-Serial.print(CALIBER_VAL.pitch);
-Serial.print(" Caliberation yaw: ");
-Serial.print(CALIBER_VAL.yaw);
-Serial.print(" Caliberation ax: ");
-Serial.print(CALIBER_VAL.ax);
-Serial.print(" Caliberation ay: ");
-Serial.print(CALIBER_VAL.ay);
-Serial.print(" Caliberation az: ");
-Serial.println(CALIBER_VAL.az);
+// Serial.print("Caliberation roll: ");
+// Serial.print(CALIBER.roll);
+// Serial.print(" Caliberation pitch: ");
+// Serial.print(CALIBER.pitch);
+// Serial.print(" Caliberation yaw: ");
+// Serial.println(CALIBER.yaw);
 
-
-delay(2000);
+// delay(2000);
 
 } 
 
@@ -738,62 +803,97 @@ delay(2000);
 
 
 unsigned long p1,p2;
-unsigned long prev;
+
 
 
 void loop(){
 
-// p1=micros();
+// p1=millis();
 
-// delay(2000);
-receiveData();
+// while(index<100){
 
-// previousRFTime = micros();
-// gyroData(gyro);
-// currentRFTime = micros();
-// for (int z=0;z<20;z++)
-// {
+      // kalman_1d(KalmanAngleRoll, KalmanUncertaintyAngleRoll, gyroX, AngleRoll);
 
-  Wire.beginTransmission(mpu6050); // Start the transmission
-  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
-  Wire.endTransmission(false); // End the transmission
-  Wire.requestFrom(mpu6050, 14, true); // request a total of 14 registers
-  Ax = (Wire.read() << 8 | Wire.read()); // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
-  Ay = (Wire.read() << 8 | Wire.read()); // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  Az = (Wire.read() << 8 | Wire.read()); // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
-  Temp = (Wire.read() << 8 | Wire.read()); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
-  Wx =( Wire.read() << 8 | Wire.read()); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  Wy = (Wire.read() << 8 | Wire.read()); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  Wz = (Wire.read() << 8 | Wire.read()); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
-  Wire.endTransmission(true); // End the transmission
-  // delayMicroseconds(50);
-  a = (float)Wx/65.0;
-  b = (float)Wy/65.0;
-  c = (float)Wz/65.0;
-  d= (float)Ax/4096.0;
-  e= (float)Ay/4096.0;
-  f= (float)Az/4096.0;
+      // KalmanAngleRoll=Kalman1DOutput[0]; KalmanUncertaintyAngleRoll=Kalman1DOutput[1];
 
+      // kalman_1d(KalmanAnglePitch, KalmanUncertaintyAnglePitch, gyroY, AnglePitch);
+
+      // KalmanAnglePitch=Kalman1DOutput[0]; KalmanUncertaintyAnglePitch=Kalman1DOutput[1];
+// if (index<500){
+//       ck_roll+=KalmanAngleRoll;
+//       ck_pitch+=KalmanAnglePitch;
+      
+//       }
+
+      // KalmanAnglePitch=KalmanAngleRoll=0;
+      // KalmanUncertaintyAnglePitch=KalmanUncertaintyAngleRoll=2*2;
+
+  // index++;
 // }
 
-  gyroX = a;
-  gyroY = b;
-  gyroZ = c;
-  accelX = d;
-  accelY = e;
-  accelZ = f;
 
-AngleRoll =  atan(accelY/sqrt(accelX*accelX+accelZ*accelZ))*(180/3.142);
-AnglePitch= -atan(accelX/sqrt(accelY*accelY+accelZ*accelZ))*(180/3.142);
 
-Serial.print("Angle Roll: ");
-Serial.print(AngleRoll);
-Serial.print(" Angle Pitch: ");
-Serial.println(AnglePitch);
 
+
+receiveData();
+
+
+
+  Wire.beginTransmission(mpu6050); // Start the transmission
+  Wire.write(0x1A);
+  Wire.write(0x05);
+  Wire.endTransmission();
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x1C);
+  Wire.write(0x10);
+  Wire.endTransmission();
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x3B);
+  Wire.endTransmission(); 
+
+  Wire.requestFrom(mpu6050,6);
+  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
+  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
+  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
+
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x1B); 
+  Wire.write(0x8);
+  Wire.endTransmission();    
+
+  Wire.beginTransmission(mpu6050);
+  Wire.write(0x43);
+  Wire.endTransmission();
+  Wire.requestFrom(mpu6050,6);
+
+  int16_t GyroX=Wire.read()<<8 | Wire.read();
+  int16_t GyroY=Wire.read()<<8 | Wire.read();
+  int16_t GyroZ=Wire.read()<<8 | Wire.read();
+  gyroX   = (float)GyroX/65.0;
+  gyroY   = (float)GyroY/65.0;
+  gyroZ   = (float)GyroZ/65.0;
+  accelX  = (float)AccXLSB/4096.0;
+  accelY  = (float)AccYLSB/4096.0;
+  accelZ  = (float)AccZLSB/4096.0+0.06;
+
+
+// Serial.print("accelX: ");
+// Serial.print(accelX);
+// Serial.print(" accelY: ");
+// Serial.print(accelY);
+// Serial.print(" accelZ: ");
+// Serial.println(accelZ);
+
+
+AngleRoll=atan(accelY/sqrt(accelX*accelX+accelZ*accelZ))*(180/3.142);
+AnglePitch=-atan(accelX/sqrt(accelY*accelY+accelZ*accelZ))*(180/3.142);
 
 
 calcInput(data, gyro, pidOutput,ref_rpy);
+
+
+
+
 // Serial.print("Time taken by calc() function: ");
 // Serial.println(currentRFTime - previousRFTime);
 
@@ -804,18 +904,16 @@ calcInput(data, gyro, pidOutput,ref_rpy);
 
 
 // Serial.print("Time taken by loop function: ");
+delayMicroseconds(700);
+// p2=millis();
 
-// p2=micros();
-// delay(3);
+
+
 // Serial.println(p2-p1);
-// Serial.println(p1-prev);
-// prev=p2;
 
 
 
 }
-
-
 
 
 
