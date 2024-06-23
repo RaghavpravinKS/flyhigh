@@ -58,6 +58,14 @@ float kalman_1d_output[] = {0, 0};
 
 Signal rx_data;
 
+// Moving average
+#define NUM_SAMPLES 50  // Number of samples in the moving average window
+
+int roll_buffer[NUM_SAMPLES];
+int pitch_buffer[NUM_SAMPLES];
+int roll_buffer_index = 0;
+int pitch_buffer_index = 0;
+
 // Complementary filter constant
 float alpha = 0.98;
 const float dt = 0.002;
@@ -318,6 +326,28 @@ void loop() {
     // roll = kalmanAngleRoll;
     // pitch = kalmanAnglePitch;
     rate_yaw = Gz_cal;
+    // Add new roll and pitch values to the buffer
+    roll_buffer[roll_buffer_index] = roll;
+    pitch_buffer[pitch_buffer_index] = pitch;
+
+    // Update buffer index
+    roll_buffer_index = (roll_buffer_index + 1) % NUM_SAMPLES;
+    pitch_buffer_index = (pitch_buffer_index + 1) % NUM_SAMPLES;
+
+    int roll_sum = 0;
+    int pitch_sum = 0;
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        roll_sum += roll_buffer[i];
+        pitch_sum += pitch_buffer[i];
+    }
+
+    // Calculate moving average for roll and pitch
+    float roll_avg = (float)roll_sum / NUM_SAMPLES;
+    float pitch_avg = (float)pitch_sum / NUM_SAMPLES;
+
+      // Use the moving average for further calculations
+    roll = roll_avg;
+    pitch = pitch_avg;
 
     // Add dead zone
     if (abs(roll) < 1.5) roll = 0;
