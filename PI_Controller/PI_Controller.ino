@@ -28,7 +28,8 @@ const byte address[6] = "101000";
 #define MOTOR_3 3
 #define MOTOR_4 4
 
-#define FILTER_SIZE 1500  // Adjust this value as needed
+// #define FILTER_SIZE 1500  // Adjust this value as needed
+#define FILTER_SIZE 600  // Adjust this value as needed
 
 // Motor PWMs
 int Motor1 = 0;
@@ -57,6 +58,12 @@ float kalmanAngleRoll = 0, kalmanAnglePitch = 0;
 float kalman_uncertainity_roll = 2*2;
 float kalman_uncertainity_pitch = 2*2;
 float kalman_1d_output[] = {0, 0};
+
+// Filter parameters (adjust cutoff frequency as needed)
+int lowpass_cutoff_hz = 10.0;  // Adjust this value for desired filtering strength
+float lowpass_alpha = lowpass_cutoff_hz / (lowpass_cutoff_hz + 250.0);
+float lowpass_roll = 0;
+float lowpass_pitch = 0;
 
 Signal rx_data;
 
@@ -90,17 +97,104 @@ float roll_filter_buffer[FILTER_SIZE] = {0};
 float pitch_filter_buffer[FILTER_SIZE] = {0};
 int filter_index = 0;
 
-float Kp_roll = 125.0;
-float Ki_roll = 10;
+float Kp_roll = 420.0;
+float Ki_roll = 16.5;
 // float Kd_roll = 0.5;
 
-float Kp_pitch = 125.0;
-float Ki_pitch = 10;
+float Kp_pitch = 420.0;
+float Ki_pitch = 16.5;
 // float Kd_pitch = 0.5;
 
 float Kp_rate_yaw = 0.0;
 float Ki_rate_yaw = 0.0;
 // float Kd_yaw = 0.5;
+
+template <int order> // order is 1 or 2
+class LowPass
+{
+  private:
+    float a[order];
+    float b[order+1];
+    float omega0;
+    float dt;
+    bool adapt;
+    float tn1 = 0;
+    float x[order+1]; // Raw values
+    float y[order+1]; // Filtered values
+
+  public:  
+    LowPass(float f0, float fs, bool adaptive){
+      // f0: cutoff frequency (Hz)
+      // fs: sample frequency (Hz)
+      // adaptive: boolean flag, if set to 1, the code will automatically set
+      // the sample frequency based on the time history.
+      
+      omega0 = 6.28318530718*f0;
+      dt = 1.0/fs;
+      adapt = adaptive;
+      tn1 = -dt;
+      for(int k = 0; k < order+1; k++){
+        x[k] = 0;
+        y[k] = 0;        
+      }
+      setCoef();
+    }
+
+    void setCoef(){
+      if(adapt){
+        float t = micros()/1.0e6;
+        dt = t - tn1;
+        tn1 = t;
+      }
+      
+      float alpha = omega0*dt;
+      if(order==1){
+        a[0] = -(alpha - 2.0)/(alpha+2.0);
+        b[0] = alpha/(alpha+2.0);
+        b[1] = alpha/(alpha+2.0);        
+      }
+      if(order==2){
+        float alphaSq = alpha*alpha;
+        float beta[] = {1, sqrt(2), 1};
+        float D = alphaSq*beta[0] + 2*alpha*beta[1] + 4*beta[2];
+        b[0] = alphaSq/D;
+        b[1] = 2*b[0];
+        b[2] = b[0];
+        a[0] = -(2*alphaSq*beta[0] - 8*beta[2])/D;
+        a[1] = -(beta[0]*alphaSq - 2*beta[1]*alpha + 4*beta[2])/D;      
+      }
+    }
+
+    float filt(float xn){
+      // Provide me with the current raw value: x
+      // I will give you the current filtered value: y
+      if(adapt){
+        setCoef(); // Update coefficients if necessary      
+      }
+      y[0] = 0;
+      x[0] = xn;
+      // Compute the filtered values
+      for(int k = 0; k < order; k++){
+        y[0] += a[k]*y[k+1] + b[k]*x[k];
+      }
+      y[0] += b[order]*x[order];
+
+      // Save the historical values
+      for(int k = order; k > 0; k--){
+        y[k] = y[k-1];
+        x[k] = x[k-1];
+      }
+  
+      // Return the filtered value    
+      return y[0];
+    }
+};
+
+
+// Filter instance
+LowPass<2> lp_roll(3,2.5e2,true);
+LowPass<2> lp_pitch(3,2.5e2,true);
+
 
 void setup(){
     digitalWrite(blueLed, LOW);
@@ -303,22 +397,37 @@ void loop() {
     float current_roll =  atan(Ay_cal/sqrt(Ax_cal*Ax_cal+Az_cal*Az_cal))*(180/3.142) - roll_offset;
     float current_pitch= -atan(Ax_cal/sqrt(Ay_cal*Ay_cal+Az_cal*Az_cal))*(180/3.142) - pitch_offset;
 
-    float com_roll = 0.98*(roll + Gx_cal*dt) + (1-alpha)*current_roll;
-    float com_pitch = 0.98*(pitch + Gy_cal*dt) + (1-alpha)*current_pitch;
-    // a2 = micros();
-    float kal_roll = kalmanFilter(kalmanX, current_roll, Gx_cal, dt);
-    float kal_pitch = kalmanFilter(kalmanY, current_pitch, Gy_cal, dt);
+    // float com_roll = 0.98*(roll + Gx_cal*dt) + (1-alpha)*current_roll;
+    // float com_pitch = 0.98*(pitch + Gy_cal*dt) + (1-alpha)*current_pitch;
+    // // a2 = micros();
+    // float kal_roll = kalmanFilter(kalmanX, current_roll, Gx_cal, dt);
+    // float kal_pitch = kalmanFilter(kalmanY, current_pitch, Gy_cal, dt);
 
-    kalman_1d(kalmanAngleRoll, kalmanAnglePitch, Gx_cal, current_roll);
-    kalmanAngleRoll = kalman_1d_output[0];
-    kalman_uncertainity_roll = kalman_1d_output[1];
+    // kalman_1d(kalmanAngleRoll, kalmanAnglePitch, Gx_cal, current_roll);
+    // kalmanAngleRoll = kalman_1d_output[0];
+    // kalman_uncertainity_roll = kalman_1d_output[1];
 
-    kalman_1d(kalmanAnglePitch, kalmanAnglePitch, Gy_cal, current_pitch);
-    kalmanAnglePitch = kalman_1d_output[0];
-    kalman_uncertainity_pitch = kalman_1d_output[1];
+    // kalman_1d(kalmanAnglePitch, kalmanAnglePitch, Gy_cal, current_pitch);
+    // kalmanAnglePitch = kalman_1d_output[0];
+    // kalman_uncertainity_pitch = kalman_1d_output[1];
 
+<<<<<<< HEAD
     // roll = com_roll;
     // pitch = com_pitch;
+=======
+    // lowpass_roll = lowpass_alpha*(current_roll + Gx_cal);
+    // lowpass_pitch = lowpass_alpha*(current_pitch + Gy_cal);
+    // roll = lowpass_roll;
+    // Compute the filtered signal
+    // Serial.print("Roll: ");
+    // Serial.print(current_roll);
+    // Serial.print(", Pitch: ");
+    // Serial.print(current_pitch);
+    float roll_lp = lp_roll.filt(current_roll);
+    roll = roll_lp;
+    float pitch_lp = lp_pitch.filt(current_pitch);
+    pitch = pitch_lp;
+>>>>>>> 05da9c9b147184591f9573f834654153a027a674
     // roll = (1/2.05)*(1.05*kalmanAngleRoll + kal_roll);
     // pitch = (1/2.05)*(1.05*kalmanAnglePitch + kal_pitch);
     // roll = kalmanAngleRoll;
@@ -347,12 +456,37 @@ void loop() {
     if (filter_index >= FILTER_SIZE) {
         filter_index = 0;
     }
+<<<<<<< HEAD
     // roll = roll_filtered;
     // pitch = pitch_filtered;
     rate_yaw = Gz_cal;
 
     // Add dead zone
     // if (abs(roll) < 0.5) roll = 0;
+=======
+    roll = roll_filtered;
+    pitch = pitch_filtered;
+
+    // kalman_1d(kalmanAngleRoll, kalmanAnglePitch, Gx_cal, current_roll);
+    // kalmanAngleRoll = kalman_1d_output[0];
+    // kalman_uncertainity_roll = kalman_1d_output[1];
+
+    // kalman_1d(kalmanAnglePitch, kalmanAnglePitch, Gy_cal, current_pitch);
+    // kalmanAnglePitch = kalman_1d_output[0];
+    // kalman_uncertainity_pitch = kalman_1d_output[1];
+    
+    // roll = kalmanAngleRoll;
+    // pitch = kalmanAnglePitch;
+
+    // Serial.print(", Roll_filtered: ");
+    // Serial.print(roll);
+    // Serial.print(", Pitch filtered: ");
+    // Serial.println(pitch);
+    rate_yaw = Gz_cal;
+
+    // Add dead zone
+    // if (abs(roll) < 1.5) roll = 0;
+>>>>>>> 05da9c9b147184591f9573f834654153a027a674
     // if (abs(pitch) < 1.5) pitch = 0;
     if (abs(rate_yaw) < 0.2) rate_yaw = 0;
 
@@ -362,18 +496,18 @@ void loop() {
 
     // PI Controller for Roll
     if (rx_data.height > 102000)roll_integral += roll_error;
-    if (abs(roll_integral) > 650)roll_integral = 650*(roll_integral/abs(roll_integral));
+    if (abs(roll_integral) > 900)roll_integral = 900*(roll_integral/abs(roll_integral));
     roll_output = Kp_roll * roll_error + Ki_roll * roll_integral;
 
     // PI Controller for Pitch
     if (rx_data.height > 102000)pitch_integral += pitch_error;
-    if (abs(pitch_integral) > 650)pitch_integral = 650*(pitch_integral/abs(pitch_integral));
+    if (abs(pitch_integral) > 900)pitch_integral = 900*(pitch_integral/abs(pitch_integral));
     pitch_output = Kp_pitch * pitch_error + Ki_pitch * pitch_integral;
 
     // PI Controller for Rate Yaw
     // if (rx_data.height > 100000) 
     rate_yaw_integral += rate_yaw_error;
-    if (abs(rate_yaw_integral) > 650)rate_yaw_integral = 650*(rate_yaw_integral/abs(rate_yaw_integral));
+    if (abs(rate_yaw_integral) > 900)rate_yaw_integral = 900*(rate_yaw_integral/abs(rate_yaw_integral));
     rate_yaw_output = Kp_rate_yaw * rate_yaw_error + Ki_rate_yaw * rate_yaw_integral;
 
     // Motor 1 = Height - Pitch + Rate Yaw - Roll
@@ -425,9 +559,9 @@ void loop() {
     PWM.PWMC_Enable();
     delayMicroseconds(100);
 
-    debugPrint();
+    // debugPrint();
     a2 = micros();
-    if (a2-a1 < 4000) delayMicroseconds(4000-(a2-a1));
+    if (a2-a1 < 2000) delayMicroseconds(2000-(a2-a1));
     // a3 = micros();
     // Serial.println(a2-a1);
 }
@@ -450,10 +584,11 @@ void debugPrint() {
     // Serial.print(Gz_cal);
     // Serial.print(" Height: ");
     // Serial.print(rx_data.height);
-    Serial.print(" Roll: ");
+    Serial.print("Roll: ");
     Serial.print(roll);
     Serial.print(", Pitch: ");
     Serial.print(pitch);
+<<<<<<< HEAD
     Serial.print(", Rate Yaw: ");
     Serial.print(rate_yaw);
     Serial.print(", Motor1: ");
@@ -464,6 +599,18 @@ void debugPrint() {
     Serial.print(Motor3);
     Serial.print(", Motor4: ");
     Serial.print(Motor4);
+=======
+    // Serial.print(" Rate Yaw: ");
+    // Serial.print(rate_yaw);
+    // Serial.print(" Motor1: ");
+    // Serial.print(Motor1);
+    // Serial.print(" Motor2: ");
+    // Serial.print(Motor2);
+    // Serial.print(" Motor3: ");
+    // Serial.print(Motor3);
+    // Serial.print(" Motor4: ");
+    // Serial.print(Motor4);
+>>>>>>> 05da9c9b147184591f9573f834654153a027a674
     Serial.println();
 }
 
@@ -519,6 +666,4 @@ void kalman_1d(float KalmanState, float KalmanUncertainty, float KalmanInput, fl
   KalmanUncertainty=(1-KalmanGain) * KalmanUncertainty;
   kalman_1d_output[0]=KalmanState; 
   kalman_1d_output[1]=KalmanUncertainty;
-
-
 }
