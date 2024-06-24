@@ -193,8 +193,8 @@ class LowPass
 
 
 // Filter instance
-LowPass<2> lp_roll(3,2.5e2,true);
-LowPass<2> lp_pitch(3,2.5e2,true);
+LowPass<2> lp_roll(1,3.33e2,true);
+LowPass<2> lp_pitch(1,3.33e2,true);
 
 
 void setup(){
@@ -398,10 +398,11 @@ void loop() {
     float current_roll =  atan(Ay_cal/sqrt(Ax_cal*Ax_cal+Az_cal*Az_cal))*(180/3.142) - roll_offset;
     float current_pitch= -atan(Ax_cal/sqrt(Ay_cal*Ay_cal+Az_cal*Az_cal))*(180/3.142) - pitch_offset;
 
-  // Serial.print("Current Roll: ");
-  // Serial.print(current_roll);
-  // Serial.print(", Current Pitch: ");
-  // Serial.println(current_pitch);
+  Serial.print("Current Roll: ");
+  Serial.print(current_roll);
+  Serial.print(", Current Pitch: ");
+  Serial.print(current_pitch);
+
     // float com_roll = 0.98*(roll + Gx_cal*dt) + (1-alpha)*current_roll;
     // float com_pitch = 0.98*(pitch + Gy_cal*dt) + (1-alpha)*current_pitch;
     // // a2 = micros();
@@ -570,7 +571,7 @@ void loop() {
 
     debugPrint();
     a2 = micros();
-    if (a2-a1 < 2000) delayMicroseconds(2000-(a2-a1));
+    if (a2-a1 < 3000) delayMicroseconds(3000-(a2-a1));
     // a3 = micros();
     // Serial.println(a2-a1);
 }
@@ -593,7 +594,7 @@ void debugPrint() {
     // Serial.print(Gz_cal);
     // Serial.print(" Height: ");
     // Serial.print(rx_data.height);
-    Serial.print("Roll: ");
+    Serial.print(", Roll: ");
     Serial.print(roll);
     Serial.print(", Pitch: ");
     Serial.print(pitch);
