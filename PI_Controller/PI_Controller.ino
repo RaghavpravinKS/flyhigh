@@ -29,7 +29,7 @@ const byte address[6] = "101000";
 #define MOTOR_4 4
 
 // #define FILTER_SIZE 1500  // Adjust this value as needed
-#define FILTER_SIZE 600  // Adjust this value as needed
+#define FILTER_SIZE 90  // Adjust this value as needed
 
 // Motor PWMs
 int Motor1 = 0;
@@ -191,6 +191,7 @@ class LowPass
 };
 
 
+
 // Filter instance
 LowPass<2> lp_roll(3,2.5e2,true);
 LowPass<2> lp_pitch(3,2.5e2,true);
@@ -282,7 +283,7 @@ void setup(){
         Gz = ((Wire.read() << 8) | Wire.read());
         Ax_cal = (float)Ax/4096.0;
         Ay_cal = (float)Ay/4096.0;
-        Az_cal = (float)Az/4096.0 + 0.06;
+        Az_cal = (float)Az/4096.0 ;
         Tmp_cal = (float)Tmp/340.0 + 36.53;
         Gx_cal = (float)Gx/65.5;
         Gy_cal = (float)Gy/65.5;
@@ -388,7 +389,7 @@ void loop() {
 
     Ax_cal = (float)Ax/4096.0 ;
     Ay_cal = (float)Ay/4096.0 ;
-    Az_cal = (float)Az/4096.0 + 0.06;
+    Az_cal = (float)Az/4096.0 ;
     Tmp_cal = (float)Tmp/340.0 + 36.53;
     Gx_cal = (float)Gx/65.5 - Gx_offset;
     Gy_cal = (float)Gy/65.5 - Gy_offset;
@@ -397,6 +398,10 @@ void loop() {
     float current_roll =  atan(Ay_cal/sqrt(Ax_cal*Ax_cal+Az_cal*Az_cal))*(180/3.142) - roll_offset;
     float current_pitch= -atan(Ax_cal/sqrt(Ay_cal*Ay_cal+Az_cal*Az_cal))*(180/3.142) - pitch_offset;
 
+  // Serial.print("Current Roll: ");
+  // Serial.print(current_roll);
+  // Serial.print(", Current Pitch: ");
+  // Serial.println(current_pitch);
     // float com_roll = 0.98*(roll + Gx_cal*dt) + (1-alpha)*current_roll;
     // float com_pitch = 0.98*(pitch + Gy_cal*dt) + (1-alpha)*current_pitch;
     // // a2 = micros();
@@ -411,10 +416,8 @@ void loop() {
     // kalmanAnglePitch = kalman_1d_output[0];
     // kalman_uncertainity_pitch = kalman_1d_output[1];
 
-<<<<<<< HEAD
     // roll = com_roll;
     // pitch = com_pitch;
-=======
     // lowpass_roll = lowpass_alpha*(current_roll + Gx_cal);
     // lowpass_pitch = lowpass_alpha*(current_pitch + Gy_cal);
     // roll = lowpass_roll;
@@ -427,17 +430,20 @@ void loop() {
     roll = roll_lp;
     float pitch_lp = lp_pitch.filt(current_pitch);
     pitch = pitch_lp;
->>>>>>> 05da9c9b147184591f9573f834654153a027a674
+
     // roll = (1/2.05)*(1.05*kalmanAngleRoll + kal_roll);
     // pitch = (1/2.05)*(1.05*kalmanAnglePitch + kal_pitch);
     // roll = kalmanAngleRoll;
     // pitch = kalmanAnglePitch;
     // roll = 0.6*com_roll + 0.2*kalmanAngleRoll + 0.2*kal_roll;
     // pitch = 0.6*com_pitch + 0.2*kalmanAnglePitch + 0.2*kal_pitch;
-    roll = current_roll;
-    pitch = current_pitch;
+    // roll = current_roll;
+    // pitch = current_pitch;
 
     // Update filter buffer
+    // if (abs(roll)<1.0)roll=0;
+    // if (abs(pitch)<1.0)pitch=0;
+
     roll_filter_buffer[filter_index] = roll;
     pitch_filter_buffer[filter_index] = pitch;
 
@@ -456,16 +462,20 @@ void loop() {
     if (filter_index >= FILTER_SIZE) {
         filter_index = 0;
     }
-<<<<<<< HEAD
+
+
     // roll = roll_filtered;
     // pitch = pitch_filtered;
     rate_yaw = Gz_cal;
 
     // Add dead zone
     // if (abs(roll) < 0.5) roll = 0;
-=======
+
     roll = roll_filtered;
     pitch = pitch_filtered;
+
+  if(abs(roll)<0.6)roll=0;
+  if(abs(pitch)<0.6)pitch=0;
 
     // kalman_1d(kalmanAngleRoll, kalmanAnglePitch, Gx_cal, current_roll);
     // kalmanAngleRoll = kalman_1d_output[0];
@@ -482,11 +492,10 @@ void loop() {
     // Serial.print(roll);
     // Serial.print(", Pitch filtered: ");
     // Serial.println(pitch);
-    rate_yaw = Gz_cal;
+    // rate_yaw = Gz_cal;
 
     // Add dead zone
     // if (abs(roll) < 1.5) roll = 0;
->>>>>>> 05da9c9b147184591f9573f834654153a027a674
     // if (abs(pitch) < 1.5) pitch = 0;
     if (abs(rate_yaw) < 0.2) rate_yaw = 0;
 
@@ -559,7 +568,7 @@ void loop() {
     PWM.PWMC_Enable();
     delayMicroseconds(100);
 
-    // debugPrint();
+    debugPrint();
     a2 = micros();
     if (a2-a1 < 2000) delayMicroseconds(2000-(a2-a1));
     // a3 = micros();
@@ -588,18 +597,6 @@ void debugPrint() {
     Serial.print(roll);
     Serial.print(", Pitch: ");
     Serial.print(pitch);
-<<<<<<< HEAD
-    Serial.print(", Rate Yaw: ");
-    Serial.print(rate_yaw);
-    Serial.print(", Motor1: ");
-    Serial.print(Motor1);
-    Serial.print(", Motor2: ");
-    Serial.print(Motor2);
-    Serial.print(", Motor3: ");
-    Serial.print(Motor3);
-    Serial.print(", Motor4: ");
-    Serial.print(Motor4);
-=======
     // Serial.print(" Rate Yaw: ");
     // Serial.print(rate_yaw);
     // Serial.print(" Motor1: ");
@@ -610,7 +607,6 @@ void debugPrint() {
     // Serial.print(Motor3);
     // Serial.print(" Motor4: ");
     // Serial.print(Motor4);
->>>>>>> 05da9c9b147184591f9573f834654153a027a674
     Serial.println();
 }
 
