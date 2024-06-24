@@ -9,7 +9,7 @@
 
 
 SPIClass SPI(0);
-TwoWire Wire(1);
+TwoWire Wire(0);
 const int MPU6050 = 0x68;
 int redLed=24;    // Red LED
 int greenLed=22; // Green LED
@@ -28,7 +28,7 @@ const byte address[6] = "101000";
 #define MOTOR_3 3
 #define MOTOR_4 4
 
-#define FILTER_SIZE 10  // Adjust this value as needed
+#define FILTER_SIZE 1500  // Adjust this value as needed
 
 // Motor PWMs
 int Motor1 = 0;
@@ -86,8 +86,8 @@ float rate_yaw_derivative = 0;
 
 float roll_output, pitch_output, rate_yaw_output;
 
-float roll_filter_buffer[FILTER_SIZE];
-float pitch_filter_buffer[FILTER_SIZE];
+float roll_filter_buffer[FILTER_SIZE] = {0};
+float pitch_filter_buffer[FILTER_SIZE] = {0};
 int filter_index = 0;
 
 float Kp_roll = 125.0;
@@ -317,12 +317,16 @@ void loop() {
     kalmanAnglePitch = kalman_1d_output[0];
     kalman_uncertainity_pitch = kalman_1d_output[1];
 
-    roll = com_roll;
-    pitch = com_pitch;
+    // roll = com_roll;
+    // pitch = com_pitch;
     // roll = (1/2.05)*(1.05*kalmanAngleRoll + kal_roll);
     // pitch = (1/2.05)*(1.05*kalmanAnglePitch + kal_pitch);
     // roll = kalmanAngleRoll;
     // pitch = kalmanAnglePitch;
+    // roll = 0.6*com_roll + 0.2*kalmanAngleRoll + 0.2*kal_roll;
+    // pitch = 0.6*com_pitch + 0.2*kalmanAnglePitch + 0.2*kal_pitch;
+    roll = current_roll;
+    pitch = current_pitch;
 
     // Update filter buffer
     roll_filter_buffer[filter_index] = roll;
@@ -343,13 +347,13 @@ void loop() {
     if (filter_index >= FILTER_SIZE) {
         filter_index = 0;
     }
-    roll = roll_filtered;
-    pitch = pitch_filtered;
+    // roll = roll_filtered;
+    // pitch = pitch_filtered;
     rate_yaw = Gz_cal;
 
     // Add dead zone
-    if (abs(roll) < 1.5) roll = 0;
-    if (abs(pitch) < 1.5) pitch = 0;
+    // if (abs(roll) < 0.5) roll = 0;
+    // if (abs(pitch) < 1.5) pitch = 0;
     if (abs(rate_yaw) < 0.2) rate_yaw = 0;
 
     roll_error = roll_setpoint - roll;
@@ -448,17 +452,17 @@ void debugPrint() {
     // Serial.print(rx_data.height);
     Serial.print(" Roll: ");
     Serial.print(roll);
-    Serial.print(" Pitch: ");
+    Serial.print(", Pitch: ");
     Serial.print(pitch);
-    Serial.print(" Rate Yaw: ");
+    Serial.print(", Rate Yaw: ");
     Serial.print(rate_yaw);
-    Serial.print(" Motor1: ");
+    Serial.print(", Motor1: ");
     Serial.print(Motor1);
-    Serial.print(" Motor2: ");
+    Serial.print(", Motor2: ");
     Serial.print(Motor2);
-    Serial.print(" Motor3: ");
+    Serial.print(", Motor3: ");
     Serial.print(Motor3);
-    Serial.print(" Motor4: ");
+    Serial.print(", Motor4: ");
     Serial.print(Motor4);
     Serial.println();
 }
