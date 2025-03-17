@@ -1,0 +1,319 @@
+#include <Servo.h>
+#include <RF24.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <nRF24L01.h>
+#include "MPU6050_res_define.h"
+#include <pwm.h>
+
+SPIClass SPI(0);
+TwoWire Wire(0);
+const int MPU6050 = 0x68;
+int redLed=24;    // Red LED
+int greenLed=22; // Green LED
+int blueLed=23;  // Blue LED
+
+#define TRUE 1
+#define FALSE 0
+
+uint32_t LoopTimer; // 
+
+RF24 receiver(9, 10); // Initialize the radio
+const byte address[6] = "101000"; // Address for the radio
+
+#define MOTOR_1 1 // Motor 1
+#define MOTOR_2 2 // Motor 2
+#define MOTOR_3 3 // Motor 3
+#define MOTOR_4 4 // Motor 4
+
+#define FILTER_SIZE 1000  // Adjust this value as needed
+int filter_index = 0; // Filter index
+float accel_x_buffer[FILTER_SIZE] = {0}; // Accelerometer x buffer
+float accel_y_buffer[FILTER_SIZE] = {0}; // Accelerometer y buffer
+float accel_z_buffer[FILTER_SIZE] = {0}; // Accelerometer z buffer
+float gyro_x_buffer[FILTER_SIZE] = {0}; // Gyroscope x buffer
+float gyro_y_buffer[FILTER_SIZE] = {0}; // Gyroscope y buffer
+float gyro_z_buffer[FILTER_SIZE] = {0}; // Gyroscope z buffer
+
+// Initialize variables
+signed short Ax, Ay, Az, Tmp, Gx, Gy, Gz; // Accelerometer and gyroscope readings
+float Ax_filter, Ay_filter, Az_filter, Gx_filter, Gy_filter, Gz_filter; // Filtered accelerometer and gyroscope readings
+float Ax_sum, Ay_sum, Az_sum, Gx_sum, Gy_sum, Gz_sum; // Sum of accelerometer and gyroscope readings
+float Ax_conv, Ay_conv, Az_conv, Gx_conv, Gy_conv, Gz_conv; // Converted accelerometer and gyroscope readings
+
+// Motor PWMs
+int Motor1 = 0; // Motor 1 PWM
+int Motor2 = 0; // Motor 2 PWM
+int Motor3 = 0; // Motor 3 PWM
+int Motor4 = 0; // Motor 4 PWM
+
+struct Signal {
+  int height;
+  int frwrvr;
+  int rgtlft;
+  int yaw;
+};
+
+Signal rx_data; // Signal struct
+
+float Kp_roll = 300.0; // Proportional gain for roll
+float Ki_roll = 40; // Integral gain for roll
+// float Kd_roll = 0.5; // Derivative gain for roll
+
+float Kp_pitch = 300.0; // Proportional gain for pitch
+float Ki_pitch = 40; // Integral gain for pitch
+// float Kd_pitch = 0.5; // Derivative gain for pitch
+
+float Kp_rate_yaw =100.0; // Proportional gain for yaw rate
+float Ki_rate_yaw = 0.0; // Integral gain for yaw rate
+// float Kd_yaw = 0.5; // Derivative gain for yaw rate
+
+void setup(){
+    
+    Serial.begin(115200); // Initialize the serial monitor
+
+    // Initialize the LEDs
+    pinMode(redLed, OUTPUT);
+    pinMode(greenLed, OUTPUT);
+    pinMode(blueLed, OUTPUT);
+
+    
+    // Initialize the radio
+    receiver.begin();
+    if (!receiver.begin()){
+        Serial.println("Receiver failed to start");
+        digitalWrite(redLed, LOW);
+    }
+    receiver.openReadingPipe(0, address);
+    receiver.setPALevel(RF24_PA_HIGH);
+    receiver.startListening();
+    digitalWrite(blueLed, LOW);
+    Serial.println("Receiver started");\
+
+    // Initialize the MPU6050
+    Serial.println("Initializing MPU6050");
+    Wire.beginTransmission(MPU6050);
+    Wire.write(SMPLRT_DIV);
+    Wire.write(0x07);
+    delayMicroseconds(100);
+    Wire.endTransmission(true);
+    delayMicroseconds(100);
+    Wire.beginTransmission(MPU6050);
+    Wire.write(PWR_MGMT_1);
+    Wire.write(0x00);
+    Wire.endTransmission(true);
+    delayMicroseconds(100);
+    Wire.beginTransmission(MPU6050);
+    Wire.write(CONFIG);
+    Wire.write(0x02);
+    Wire.endTransmission(true);
+    delayMicroseconds(100);
+    Wire.beginTransmission(MPU6050);
+    Wire.write(GYRO_CONFIG);
+    Wire.write(0x18);
+    Wire.endTransmission(true);
+    delayMicroseconds(100);
+    Wire.beginTransmission(MPU6050);
+    Wire.write(ACCEL_CONFIG);
+    Wire.write(0x00); // 0x00 for 2g, 0x08 for 4g, 0x10 for 8g, 0x18 for 16g
+    Wire.endTransmission(true);
+    delayMicroseconds(100);
+    Serial.println("MPU6050 initialized");
+
+    // Initialize the moving average filter
+    Serial.println("Initializing moving average filter");
+    digitalWrite(blueLed, HIGH);
+    digitalWrite(greenLed, LOW);
+    for (int i = 0; i < FILTER_SIZE; i++){
+        Wire.beginTransmission(MPU6050);
+        Wire.write(ACCEL_XOUT_H);
+        Wire.endTransmission(false);
+        Wire.requestFrom(MPU6050, 14, true);
+        Ax = ((Wire.read() << 8) | Wire.read());
+        Ay = ((Wire.read() << 8) | Wire.read());
+        Az = ((Wire.read() << 8) | Wire.read());
+        Tmp = ((Wire.read() << 8) | Wire.read());
+        Gx = ((Wire.read() << 8) | Wire.read());
+        Gy = ((Wire.read() << 8) | Wire.read());
+        Gz = ((Wire.read() << 8) | Wire.read());
+
+        Ax_conv = (float)Ax/16384.0;
+        Ay_conv = (float)Ay/16384.0;
+        Az_conv = (float)Az/16384.0;
+        Gx_conv = (float)Gx/16.4;
+        Gy_conv = (float)Gy/16.4;
+        Gz_conv = (float)Gz/16.4;
+        
+        accel_x_buffer[i] = Ax_conv;
+        accel_y_buffer[i] = Ay_conv;
+        accel_z_buffer[i] = Az_conv;
+        gyro_x_buffer[i] = Gx_conv;
+        gyro_y_buffer[i] = Gy_conv;
+        gyro_z_buffer[i] = Gz_conv;
+    }
+
+    // Calculate moving average
+    for (int i = 0; i < FILTER_SIZE; i++) {
+        Ax_filter += accel_x_buffer[i];
+        Ay_filter += accel_y_buffer[i];
+        Az_filter += accel_z_buffer[i];
+        Gx_filter += gyro_x_buffer[i];
+        Gy_filter += gyro_y_buffer[i];
+        Gz_filter += gyro_z_buffer[i];
+    }
+    Ax_sum = Ax_filter;
+    Ay_sum = Ay_filter;
+    Az_sum = Az_filter;
+    Gx_sum = Gx_filter;
+    Gy_sum = Gy_filter;
+    Gz_sum = Gz_filter;
+    Ax_filter = Ax_filter / FILTER_SIZE;
+    Ay_filter = Ay_filter / FILTER_SIZE;
+    Az_filter = Az_filter / FILTER_SIZE;
+    Gx_filter = Gx_filter / FILTER_SIZE;
+    Gy_filter = Gy_filter / FILTER_SIZE;
+    Gz_filter = Gz_filter / FILTER_SIZE;
+    Serial.println("Moving average filter initialized");
+    filter_index = 0;
+}
+
+unsigned long timing_1 = 0;
+unsigned long timing_2 = 0;
+unsigned long timing_3 = 0;
+unsigned long timing_4 = 0;
+
+float Ax_prev = 0;
+float Ay_prev = 0;
+float Az_prev = 0;
+float Gx_prev = 0;
+float Gy_prev = 0;
+float Gz_prev = 0;
+
+#define B0 0.00362168
+#define B1 0.00724336
+#define B2 0.00362168
+#define A1 -1.82269493
+#define A2 0.83718165
+
+float ax_filtered = 0; 
+float ax_buffer[3] = {0};      // Stores last 3 input samples
+float ax_out_buffer[3] = {0};  // Stores last 3 output samples
+
+
+
+void lowpass_filter(float ax) {
+    // Shift previous values
+    ax_buffer[2] = ax_buffer[1];
+    ax_buffer[1] = ax_buffer[0];
+    ax_buffer[0] = ax;
+
+    ax_out_buffer[2] = ax_out_buffer[1];
+    ax_out_buffer[1] = ax_out_buffer[0];
+
+    // Apply Butterworth IIR filter equation
+    ax_out_buffer[0] = B0 * ax_buffer[0] + B1 * ax_buffer[1] + B2 * ax_buffer[2]
+                      - A1 * ax_out_buffer[1] - A2 * ax_out_buffer[2];
+
+    ax_filtered = ax_out_buffer[0]; // Store filtered output
+}
+
+
+void loop() {
+    timing_1 = micros();
+    if (receiver.available()) {
+        digitalWrite(redLed,HIGH);
+        digitalWrite(greenLed,LOW);
+        digitalWrite(blueLed,HIGH);
+        receiver.read(&rx_data, sizeof(rx_data));
+    } else {
+        digitalWrite(redLed,LOW);
+        digitalWrite(greenLed,HIGH);
+        digitalWrite(blueLed,HIGH);
+        rx_data.height = rx_data.height;
+        rx_data.frwrvr = rx_data.frwrvr;
+        rx_data.rgtlft = rx_data.rgtlft;
+        rx_data.yaw = rx_data.yaw;
+    }
+
+    Wire.beginTransmission(MPU6050);
+    Wire.write(ACCEL_XOUT_H);
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU6050, 14, true);
+    Ax = ((Wire.read() << 8) | Wire.read());
+    Ay = ((Wire.read() << 8) | Wire.read());
+    Az = ((Wire.read() << 8) | Wire.read());
+    Tmp = ((Wire.read() << 8) | Wire.read());
+    Gx = ((Wire.read() << 8) | Wire.read());
+    Gy = ((Wire.read() << 8) | Wire.read());
+    Gz = ((Wire.read() << 8) | Wire.read());
+    Wire.endTransmission(true);
+
+    Ax_conv = (float)Ax/16384.0;
+    Ay_conv = (float)Ay/16384.0;
+    Az_conv = (float)Az/16384.0;
+    Gx_conv = (float)Gx/16.4;
+    Gy_conv = (float)Gy/16.4;
+    Gz_conv = (float)Gz/16.4;
+
+    // Ax_prev = accel_x_buffer[filter_index];
+    // Ay_prev = accel_y_buffer[filter_index];
+    // Az_prev = accel_z_buffer[filter_index];
+    // Gx_prev = gyro_x_buffer[filter_index];
+    // Gy_prev = gyro_y_buffer[filter_index];
+    // Gz_prev = gyro_z_buffer[filter_index];
+
+    // accel_x_buffer[filter_index] = Ax_conv;
+    // accel_y_buffer[filter_index] = Ay_conv;
+    // accel_z_buffer[filter_index] = Az_conv;
+    // gyro_x_buffer[filter_index] = Gx_conv;
+    // gyro_y_buffer[filter_index] = Gy_conv;
+    // gyro_z_buffer[filter_index] = Gz_conv;
+
+    // Ax_sum = Ax_sum - Ax_prev + Ax_conv;
+    // Ay_sum = Ay_sum - Ay_prev + Ay_conv;
+    // Az_sum = Az_sum - Az_prev + Az_conv;
+    // Gx_sum = Gx_sum - Gx_prev + Gx_conv;
+    // Gy_sum = Gy_sum - Gy_prev + Gy_conv;
+    // Gz_sum = Gz_sum - Gz_prev + Gz_conv;
+
+    // Ax_filter = Ax_sum / FILTER_SIZE;
+    // Ay_filter = Ay_sum / FILTER_SIZE;
+    // Az_filter = Az_sum / FILTER_SIZE;
+    // Gx_filter = Gx_sum / FILTER_SIZE;
+    // Gy_filter = Gy_sum / FILTER_SIZE;
+    // Gz_filter = Gz_sum / FILTER_SIZE;
+
+    // Serial.print("Ax: ");
+    // Serial.println(Ax_filter);
+    // Serial.print("| Ay: ");
+    // Serial.print(Ay_conv);
+    // Serial.print("| Az: ");
+    // Serial.println(Az_conv);
+
+    // Update the filter index
+    filter_index = (filter_index + 1) % FILTER_SIZE;
+
+    // Calculate roll and pitch angles
+    // float roll = atan2(Ay_filter, Az_filter) * 180 / M_PI;
+    // float pitch = atan2(-Ax_filter, sqrt(Ay_filter * Ay_filter + Az_filter * Az_filter)) * 180 / M_PI;
+
+    // Serial.print("Roll: ");
+    // Serial.println(roll);
+    // Serial.print("| Pitch: ");
+    // Serial.println(pitch);
+
+    // Serial.println(Ax_conv);
+    lowpass_filter(Ax_conv);
+    Serial.println(ax_filtered);
+    // Serial.print(Ay_conv);
+    // Serial.println(Az_conv);
+
+    timing_2 = micros();
+    // Make the loop run at 250Hz
+    if (timing_2 - timing_1 < 4000) {
+        delayMicroseconds(4000 - (timing_2 - timing_1));
+    }
+    // timing_3 = micros();
+    // Serial.print("Time taken for sensor reading: ");
+    // Serial.println(timing_3 - timing_1);
+}
