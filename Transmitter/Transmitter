@@ -1,0 +1,105 @@
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+
+SPIClass SPI(1);
+
+RF24 radio(20, 21); // CE, CSN         
+const byte address[6] = "100001"; // Address for communication
+
+struct DataPacket {
+    int throttle;
+    int roll;
+    int pitch;
+    int yaw;
+};
+
+DataPacket data;
+unsigned long time1,time2;
+
+void setup() {
+    Serial.begin(115200); // Start the serial communication
+    Serial.println("Starting setup");
+    pinMode(13, INPUT_PULLUP);  // Configure GPIO 13 as input with pull-up resistor
+    
+    radio.begin();                  
+    radio.openWritingPipe(address); 
+    radio.setPALevel(RF24_PA_MAX);  
+    radio.stopListening();   
+    data.ki=35;  
+    data.kp=200;
+    data.kd=158; 
+    data.pitch=0;
+
+}
+
+void loop() {
+    
+    int x = analogRead(A1);
+    int y = analogRead(A2);
+    int z = analogRead(A3);
+    float w = analogRead(A0);
+
+
+    if (x > 1500 && data.throttle<=120000) {
+      data.throttle += 250;
+    }
+    if (x < 200 && data.throttle<=120000) {
+      data.throttle -= 250;
+    }
+
+    if (x > 1500 && data.throttle>=120000) {
+      data.throttle += 100;
+    }
+    if (x < 200 && data.throttle>=120000) {
+      data.throttle -= 100;
+    }
+
+    if (y > 1500) {
+      data.roll = 4;
+    }
+    if (y < 200 ) {
+      data.roll = -4;
+    }
+
+    if (z > 1500) {
+      data.pitch = 4;
+    }
+    if (z < 200 ) {
+      data.pitch = -4;
+    }
+
+    if (w > 1500) {
+      data.yaw = 2;
+    }
+    if (w < 200 ) {
+      data.yaw = -2;
+    }
+
+    if (data.throttle <= 83800) {
+        data.throttle = 83800;
+    } 
+    if (data.throttle >= 145000) {
+        data.throttle = 145000;
+    } 
+  
+  
+    while (!radio.write(&data, sizeof(DataPacket))) {
+        delayMicroseconds(100);
+    }
+    
+    Serial.print("Throttle: ");
+    Serial.println(data.throttle);
+
+    Serial.print("Roll: ");
+    Serial.print(data.roll);
+    Serial.print(" ");
+    Serial.print("Pitch: ");
+    Serial.print(data.pitch);
+    Serial.print(" "); 
+    Serial.print("Yaw: ");
+    Serial.println(data.yaw);
+
+    delayMicroseconds(100);
+}
+
